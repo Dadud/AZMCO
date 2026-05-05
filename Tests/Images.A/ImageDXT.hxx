@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2025 Americus Maximus
+Copyright (c) 2025 - 2026 Americus Maximus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -28,4 +28,6 @@ SOFTWARE.
 #include <Graphics.Basic.hxx>
 #include <Images.hxx>
 
+BOOL ExecuteImageDXT1(HMODULE module, const D3DFORMAT format);
 BOOL ExecuteImageDXT23(HMODULE module, const D3DFORMAT format);
+BOOL ExecuteImageDXT45(HMODULE module, const D3DFORMAT format);

@@ -20,12 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#pragma once
+#include "ImageDXT.hxx"
 
-#include "Image.hxx"
-#include "Images.hxx"
-
-#include <Graphics.Basic.hxx>
-#include <Images.hxx>
-
-BOOL ExecuteImageDXT1(HMODULE module, const D3DFORMAT format);
+BOOL ExecuteImageDXT45(HMODULE module, const D3DFORMAT format) {
+    // TODO NOT IMPLEMENTED
+    return FALSE;
+}

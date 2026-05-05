@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2023 - 2025 Americus Maximus
+Copyright (c) 2023 - 2026 Americus Maximus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -2024,6 +2024,15 @@ namespace RendererModule
             return State.DX.Device->SetCurrentTexturePalette(tex->Palette) == D3D_OK;
         }
 
+        return FALSE;
+    }
+
+    // 0x6000989a
+    BOOL UpdateRendererTextureSurface(LPDIRECT3DSURFACE8 surface,
+        const u32 todo_2, D3DRECT* src, const u32* pixels, D3DFORMAT format, const u32 pitch,
+        const u32 todo_7, D3DRECT* dst, const u32 todo_9, const u32 todo_10)
+    {
+        // TODO NOT IMPLEMENTED
         return FALSE;
     }
 }

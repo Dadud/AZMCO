@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2023 - 2025 Americus Maximus
+Copyright (c) 2023 - 2026 Americus Maximus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -331,14 +331,15 @@ namespace RendererModule
     BOOL AcquireRendererDeviceDepthFormat(const u32 device, const D3DFORMAT adapter, const D3DFORMAT target, D3DFORMAT* result);
     BOOL AcquireRendererDeviceDepthFormat(u32* bits, D3DFORMAT* result);
     BOOL AcquireRendererDeviceDepthWindowFormat(u32* width, u32* height, u32* bits, D3DFORMAT* format);
+    BOOL AreRenderPacketsComplete(const D3DPRIMITIVETYPE type, const u32 count);
     BOOL AttemptRenderPackets(void);
     BOOL BeginRendererScene(void);
-    BOOL AreRenderPacketsComplete(const D3DPRIMITIVETYPE type, const u32 count);
     BOOL RestoreRendererSurfaces(void);
     BOOL SelectRendererState(const D3DRENDERSTATETYPE type, const DWORD value);
     BOOL SelectRendererTextureStage(const u32 stage, const D3DTEXTURESTAGESTATETYPE type, const DWORD value);
     BOOL UpdateRendererTexture(Renderer::RendererTexture* tex, const u32* pixels, const u32* palette);
     BOOL UpdateRendererTexturePalette(Renderer::RendererTexture* tex, const u32* palette);
+    BOOL UpdateRendererTextureSurface(LPDIRECT3DSURFACE8 surface, const u32 todo_2, D3DRECT* src, const u32* pixels, D3DFORMAT format, const u32 pitch, const u32 todo_7, D3DRECT* dst, const u32 todo_9, const u32 todo_10); // TODO
     D3DFORMAT AcquireRendererTextureFormat(const u32 indx);
     HRESULT InitializeRendererTexture(Renderer::RendererTexture* tex);
     inline u32 AcquireNormal(const f32x3* a, const f32x3* b, const f32x3* c) { const s32 value = (s32)((b->X - a->X) * (c->Y - a->Y) - (c->X - a->X) * (b->Y - a->Y)); return *(u32*)&value; }

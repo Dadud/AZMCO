@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2025 Americus Maximus
+Copyright (c) 2025 - 2026 Americus Maximus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,8 +24,7 @@ SOFTWARE.
 
 #include "ImageBitMap.hxx"
 #include "ImageYV.hxx"
-#include "ImageDXT1.hxx"
-#include "ImageDXT23.hxx"
+#include "ImageDXT.hxx"
 #include "ImageDXTColors.hxx"
 #include "ImageDXTMisc.hxx"
 #include "ImageDXTQuads.hxx"
@@ -64,11 +63,11 @@ s32 main(s32 argc, char** argv)
     //printf("A8R3G3B2: %s\r\n", ExecuteImageBitMap(module, D3DFMT_A8R3G3B2) ? "OK" : "ERROR"); // OK
     //printf("A8R8G8B8: %s\r\n", ExecuteImageBitMap(module, D3DFMT_A8R8G8B8) ? "OK" : "ERROR"); // OK
 
-    printf("DXT1: %s\r\n", ExecuteImageDXT1(module, D3DFMT_DXT1) ? "OK" : "ERROR");
-    printf("DXT2: %s\r\n", ExecuteImageDXT23(module, D3DFMT_DXT2) ? "OK" : "ERROR");
-    printf("DXT3: %s\r\n", ExecuteImageDXT23(module, D3DFMT_DXT3) ? "OK" : "ERROR");
-    //TODO printf("DXT4: %s\r\n", ExecuteImageDXT(module, D3DFMT_DXT4) ? "OK" : "ERROR");
-    //TODO printf("DXT5: %s\r\n", ExecuteImageDXT(module, D3DFMT_DXT5) ? "OK" : "ERROR");
+    //printf("DXT1: %s\r\n", ExecuteImageDXT1(module, D3DFMT_DXT1) ? "OK" : "ERROR");
+    //printf("DXT2: %s\r\n", ExecuteImageDXT23(module, D3DFMT_DXT2) ? "OK" : "ERROR");
+    //printf("DXT3: %s\r\n", ExecuteImageDXT23(module, D3DFMT_DXT3) ? "OK" : "ERROR");
+    printf("DXT4: %s\r\n", ExecuteImageDXT45(module, D3DFMT_DXT4) ? "OK" : "ERROR");
+    //TODO printf("DXT5: %s\r\n", ExecuteImageDXT45(module, D3DFMT_DXT5) ? "OK" : "ERROR");
 
     //printf("L6V5U5: %s\r\n", ExecuteImageBitMap(module, D3DFMT_L6V5U5) ? "OK" : "ERROR"); // OK
     //printf("L8: %s\r\n", ExecuteImageBitMap(module, D3DFMT_L8) ? "OK" : "ERROR"); // OK

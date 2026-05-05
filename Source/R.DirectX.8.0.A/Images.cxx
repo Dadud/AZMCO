@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 - 2025 Americus Maximus
+Copyright (c) 2024 - 2026 Americus Maximus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1816,7 +1816,7 @@ namespace Images
             // TODO
             //else if (self->Format == D3DFMT_DXT4 || self->Format == D3DFMT_DXT5)
             //{
-            //    UnpackImageDXT4(x / IMAGE_DXT_DIMENSION * 16, values,
+            //    UnpackImageDXT45(x / IMAGE_DXT_DIMENSION * 16, values,
             //        (u16*)((addr)self->Pixels + (addr)(self->MinLine / IMAGE_DXT_DIMENSION * self->Stride)
             //            + (addr)(self->MinLevel * self->AreaStride) + (addr)(x / IMAGE_DXT_DIMENSION * 16))); // TODO
             //}
@@ -2642,7 +2642,7 @@ namespace Images
     }
 
     // 0x6000fd0a
-    // A1R5G5B5 -> A8R8G8B8 ???
+    // A1R5G5B5 -> A8R8G8B8
     void AcquireImageColor(const u16 in, ImagePixel* out)
     {
         ImagePixel result;
