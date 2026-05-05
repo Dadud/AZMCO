@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 Americus Maximus
+Copyright (c) 2024 - 2026 Americus Maximus
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -226,7 +226,7 @@ namespace RendererModule
         if (State.Renderer.Surface.Mode != RENDERER_MODULE_STATE_RENDERER_MODE_0)
         {
             FUN_60004510(State.Renderer.Surface.Mode);
-        
+
             return RENDERER_MODULE_SUCCESS;
         }
 
@@ -515,7 +515,7 @@ namespace RendererModule
             FUN_600016e0(value);
             FUN_60001730(value);
             FUN_600017b0(value);
-            
+
             Idle();
 
             SelectRendererStateValue(RENDERER_MODULE_STATE_SELECT_BLEND_STATE, value);
@@ -613,7 +613,7 @@ namespace RendererModule
         const u32 result = SelectBasicRendererState(state, value);
 
         if (result != RENDERER_MODULE_FAILURE) { SelectRendererStateValue(state, value); }
-        
+
         return result;
     }
 
@@ -649,7 +649,7 @@ namespace RendererModule
 
         SelectGameWindow(1); // TODO
 
-        RendererModuleWindowLock* lock = LockGameWindow();
+        const RendererModuleWindowLock* lock = LockGameWindow();
 
         if (lock != NULL)
         {
@@ -767,8 +767,26 @@ namespace RendererModule
     // a.k.a. THRASH_writerect
     DLLAPI u32 STDCALLAPI WriteRectangle(const u32 x, const u32 y, const u32 width, const u32 height, const u32* pixels)
     {
-        // TODO NOT IMPLEMENTED
+        RendererModuleWindowLock* lock = LockGameWindow();
 
-        return RENDERER_MODULE_FAILURE;
+        if (lock == NULL)
+        {
+            return RENDERER_MODULE_FAILURE;
+        }
+
+        const u32 stride = lock->Stride;
+        const u32 bytes = lock->Format == RENDERER_PIXEL_FORMAT_R8G8B8 ? 4 : 2;
+        const u32 line = width * bytes;
+
+        u32* ptr = (u32*)((addr)lock->Data + (x * bytes + y * stride));
+
+        for (u32 xx = 0; xx < height; xx++) {
+            u32* dst = (u32*)((addr)ptr + stride * xx);
+            const u32* src = (u32*)((addr)pixels + line * xx);
+
+            memcpy(dst, src, line);
+        }
+
+        return UnlockGameWindow(lock);
     }
 }
