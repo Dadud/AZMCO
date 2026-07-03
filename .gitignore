@@ -1,0 +1,32 @@
+# Build outputs
+build/
+*.dll
+*.exe
+*.pdb
+*.obj
+*.lib
+*.exp
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sdf
+
+# Editor
+*.swp
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# MinGW intermediate
+*.o
+*.a
+*.gcno
+*.gcda
+
+# Session-local
+NOTES.md

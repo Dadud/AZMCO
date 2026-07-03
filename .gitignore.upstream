@@ -1,0 +1,30 @@
+# Build outputs (per-backend)
+build/
+*.dll
+*.exe
+*.pdb
+*.obj
+*.lib
+*.exp
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sdf
+
+# Editor
+*.swp
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# MinGW intermediate
+*.o
+*.a
+
+# Session-local dev notes (sensitive or transient)
+NOTES.md
