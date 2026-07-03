@@ -12,19 +12,34 @@ This is the **dev workspace** for `americusmaximus/AZMCO` — a clean fork-local
 │   ├── SDK/         ← DX7 / DX8 SDK headers/libs
 │   ├── Compatibility/ ← Watcom + MSVC6 legacy build targets
 │   └── .git/        ← upstream tracked here
+├── mco-re/          ← bare clone of Dadud/Motor-City-Online-RE, branch dev/integration
+│   ├── src/         ← RE work — game/mcity/npslib/authlogin
+│   ├── tools/       ← Extraction suite (BIG, FSH, BNK, MDB, VIV, ISO, RefPack)
+│   ├── data/        ← Extracted game data CSVs (Cars, Parts, Brands, StockEngines)
+│   ├── docs/        ← Format / gameplay / network / media docs
+│   ├── server/mco_shard/  ← Local shard server (Python)
+│   ├── client/preservation_client/  ← Custom client
+│   └── persistence/       ← sqlite shard DB
 ├── build/           ← out-of-tree build outputs (gitignored)
 ├── patches/         ← binary patches (e.g. dx8z reset-loop patch)
 ├── scripts/         ← build / test / install helpers
 └── NOTES.md         ← session-local development notes (NOT committed)
 ```
 
-## Branches
+## Repos
 
-| Branch | Purpose |
-|---|---|
-| `main` (from upstream) | Frozen mirror, never commit here directly |
-| `dev/modernization` | Active development branch |
-| Future: `feat/r.directx.11.0.a`, `feat/r.vulkan.1.0.a` | Per-backend feature branches |
+| Repo | Purpose | Branch |
+|---|---|---|
+| `americusmaximus/AZMCO` | Open-source re-implementation of MCO + launcher | `dev/modernization` (1 ahead of main) |
+| `Dadud/Motor-City-Online-RE` | RE research, extraction tools, format docs, local shard server | `dev/integration` (1 ahead of main) |
+
+## Cross-pollination roadmap
+
+- Use `mco-re/docs/formats/` (BIG, FSH, VIV, MDB, RefPack) as ground truth for asset extraction
+- Use `mco-re/data/*.csv` (Cars, Parts, Brands) for verification harness
+- Use `mco-re/src/game/render.c` as a reference for AZMCO's `R.DirectX.8.0.A`
+- Use `mco-re/server/mco_shard/` for local gameplay testing once a renderer backend works
+- The 2-byte dx8z reset-loop patch (~/Apps/MCOHackAnalysis/) maps to AZMCO's `R.DirectX.8.0.A` source
 
 ## Building
 
