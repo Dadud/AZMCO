@@ -56,6 +56,11 @@ extern "C" BOOL DestroyGameWindow(void);
 #define MAX_RENDERER_MODULE_DEVICE_NAME_LENGTH 32
 #define MAX_RENDERER_MODULE_DEVICE_LONG_NAME_LENGTH 80
 
+// Minimal Windows SDK include. Use Windows SDK types directly since
+// the AZX/Basic.hxx header pulls in D3D8-specific stuff that doesn't
+// belong in the DX11 backend.
+#include <windows.h>
+
 // Minimal type aliases (normally come from AZX/Basic.hxx)
 typedef unsigned char u8;
 typedef unsigned short u16;
