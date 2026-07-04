@@ -68,13 +68,29 @@ typedef unsigned long DWORD;
 typedef void* LPVOID;
 
 // Phase 2: state placeholder. Phase 3 will move to real renderer state.
+// Phase 4 state struct.
+// mcity treats this like an interface and reads offset 0xC as a vtable
+// function pointer. We put the Device pointer there so any vtable access
+// routes through D3D11's real vtable (which will return sensible errors
+// for methods mcity shouldn't be calling on a D3D device).
+//
+// Actually: mcity derefs offset 0xC of g_DX11 as *(void**) and tries to
+// call whatever function pointer it finds. With g_DX11.Device at offset 0xC,
+// mcity would read *(Device + 0xC) which is device->lpVtbl[3] = AddRef
+// or similar. AddRef is harmless. Release is harmless. mcity will just call
+// AddRef/Release on our device, which is fine.
+//
+// We keep RenderTargetView in the struct for our own use (offset 0x10+).
 static struct DX11State {
-    ID3D11Device* Device;
-    ID3D11DeviceContext* Context;
-    IDXGISwapChain* SwapChain;
-    ID3D11RenderTargetView* RenderTargetView;
-    BOOL IsInitialized;
-} g_DX11 = { nullptr, nullptr, nullptr, nullptr, 0 };
+    ID3D11Device* Device;             // 0x00 - primary D3D11 device
+    ID3D11DeviceContext* Context;     // 0x04 - immediate context
+    IDXGISwapChain* SwapChain;        // 0x08 - swap chain (created in CreateGameWindow)
+    ID3D11Device* McityView;          // 0x0C - mcity reads this as vtable ptr (alias for Device)
+    ID3D11RenderTargetView* RenderTargetView;  // 0x10 - the back buffer RTV
+    BOOL IsInitialized;               // 0x14 - init complete flag
+    u32 DeviceCount;                  // 0x18 - mirrors upstream Devices.Count
+    void* Window;                     // 0x1C - the active window handle (HWND)
+} g_DX11 = { nullptr, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr };
 
 // RendererModuleDescriptor (normally from RendererModule.Basic.hxx).
 // Phase 2 skeleton defines only what we need for AcquireDescriptor.
@@ -223,7 +239,22 @@ BOOL DrawTriangleStrip(const u32 count, void* vertexes) { return TRUE; }
 // These entry points are also exported by the upstream's def file.
 BOOL FlushGameWindow(void) { return TRUE; }
 BOOL Idle(void) { return TRUE; }
-BOOL Init(void) { return 0; }  // 0 = no renderer (NULL instance pointer)
+BOOL Init(void)
+{
+    if (g_DX11.IsInitialized) {
+        // Make sure the McityView pointer is in sync with the device.
+        // This is what mcity reads at offset 0xC of our state struct.
+        if (!g_DX11.McityView) { g_DX11.McityView = g_DX11.Device; }
+        return g_DX11.DeviceCount ? g_DX11.DeviceCount : 1;
+    }
+
+    // Mark as initialized. Real DX11 device creation happens in CreateGameWindow
+    // when we have an HWND. This mirrors the upstream DX8's Init behavior of
+    // returning the device count (which is 1 for a single-display system).
+    g_DX11.IsInitialized = 1;
+    g_DX11.DeviceCount = 1;
+    return 1;  // 1 device available
+}
 BOOL Is(void) { return 0; }  // 0 = no acceleration
 BOOL LockGameWindow(void) { return TRUE; }
 BOOL ToggleGameWindow(BOOL state) { return TRUE; }
