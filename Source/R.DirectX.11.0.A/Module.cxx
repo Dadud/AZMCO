@@ -163,16 +163,19 @@ extern "C" {
 // Returns TRUE on success, FALSE on any failure.
 // On failure, all D3D11 resources are released and g_DX11 state is reset.
 BOOL CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options) {
-    // Phase 3: This is the REAL signature mcity expects (4 u32 args = 16 bytes).
-    // The HWND is NOT passed here - mcity manages windows separately and passes
-    // window indices to the draw functions.
+    // Phase 4: This is the real signature mcity calls (4 u32 args, not HWND).
+    // mcity manages windows separately and passes a window index to draw funcs.
     //
-    // For now, return a fake window index. Phase 4 will create real DX11 surfaces.
-    return 1; // Fake window index 1
+    // We don't have an HWND here so we can't create the swap chain yet.
+    // The swap chain will be created in AcquireRendererInstance when we get
+    // the HWND. For now, just return a window index.
+    g_DX11.DeviceCount = 1;
+    return 1; // window index 1
 }
 
 BOOL DestroyGameWindow(const u32 indx)
 {
+    (void)indx;
     if (g_DX11.RenderTargetView) { g_DX11.RenderTargetView->Release(); g_DX11.RenderTargetView = nullptr; }
     if (g_DX11.SwapChain) { g_DX11.SwapChain->Release(); g_DX11.SwapChain = nullptr; }
     if (g_DX11.Context) { g_DX11.Context->Release(); g_DX11.Context = nullptr; }
@@ -266,7 +269,7 @@ BOOL SelectVideoMode(const u32 mode, const u32 pending, const u32 depth) { retur
 // Phase 3: Present the back buffer (swap chain Present).
 BOOL SyncGameWindow(const u32 type)
 {
-    if (!g_DX11.SwapChain) return FALSE;
+    if (!g_DX11.SwapChain || !g_DX11.Device) return FALSE;
     // type=0 -> standard Present, type=1 -> vsync, type=2 -> no-wait
     u32 sync_interval = 1;  // vsync
     u32 flags = 0;
