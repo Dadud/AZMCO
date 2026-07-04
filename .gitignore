@@ -30,3 +30,7 @@ Thumbs.db
 
 # Session-local
 NOTES.md
+
+# Test artifacts
+test_desc.cpp
+dxdiag.txt
