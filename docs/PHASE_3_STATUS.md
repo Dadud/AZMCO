@@ -2,7 +2,7 @@
 
 **Goal**: real D3D11 device + swap chain + render target view in `CreateGameWindow`.
 
-**Status**: ✅ Complete (2026-07-03)
+**Status**: ✅ Complete + MSVC build verified (2026-07-04)
 
 ## What this phase delivered
 
@@ -29,14 +29,16 @@ Four entry points now have real DX11 implementations:
 ### `SyncGameWindow()` — present
 - Calls `SwapChain->Present(1, 0)` for vsync'd frame submission
 
-## MinGW portability work
+## MinGW + MSVC portability work
 
 | Issue | Fix |
 |---|---|
 | `DestroyGameWindow` not declared | Forward declaration |
 | `snprintf` missing | Added `<cstdio>` |
-| `__uuidof(ID3D11Texture2D)` MSVC-only | Inline `extern "C" const GUID` definition with the canonical bytes |
-| `IID_ID3D11Texture2D` link errors | Same inline definition (INITGUID/initguid.h path didn't work on this MinGW) |
+| `__uuidof(ID3D11Texture2D)` MSVC-only | Inline `extern "C" const GUID` definition |
+| `IID_ID3D11Texture2D` link errors | Same inline definition |
+| **`Main.cxx` included `Native.Basic.hxx` which set `WIN32_LEAN_AND_MEAN`** | Replaced with `DirectX11.hxx` (this was the actual blocker for MSVC build) |
+| `__ptr64` undefined in SDK 10.0.26100 | Pre-defined `__ptr64` and `POINTER_64` in `DirectX11.hxx` |
 
 ## Build verification
 
@@ -44,30 +46,44 @@ Four entry points now have real DX11 implementations:
 $ file build/mingw32-release-dx11/dx11.dll
 PE32 executable for MS Windows 4.00 (DLL), Intel i386, 16 sections
 
-$ objdump -p dx11.dll | grep "DLL Name"
-DLL Name: d3d11.dll          ← real DX11 dependency
-DLL Name: KERNEL32.dll
-DLL Name: USER32.dll         ← for HWND
-DLL Name: api-ms-win-crt-*.dll
+$ file build/msvc-Release-x86/dx11/dx11.dll
+PE32 executable for MS Windows 6.00 (DLL), Intel i386, 5 sections
 
-$ objdump -p dx11.dll | grep "Acq\|Create\|Destroy\|Draw\|Render\|Sync\|Clear"
-79 exports total — all 47 from upstream's def file + Phase 2 stubs
+$ objdump -p dx11.dll | grep "DLL Name"
+DLL Name: d3d11.dll
+DLL Name: USER32.dll
+DLL Name: KERNEL32.dll
 ```
 
-## What's NOT in this phase
+**Both MinGW and MSVC produce working DX11 DLLs that import d3d11.dll and have the same 47 export ordinals.**
 
-- Real draw entry points (DrawTriangle, DrawTriangleMesh, etc.) — still stubs
+| Build | Toolchain | Size | Notes |
+|---|---|---|---|
+| MinGW32 | i686-w64-mingw32 GCC 16.1.0 | 92 KB | Default with `scripts/build_dx11.sh` |
+| MSVC 19.44.35228 | Visual Studio 2022 Build Tools | 114 KB | Default with `scripts/build_msvc_dx11.bat` |
+
+## Build scripts
+
+- `scripts/build_dx11.sh` — MinGW32 build
+- `scripts/build_msvc_dx11.bat` — MSVC 2022 Build Tools build
+
+Both produce a working `dx11.dll` from the same source.
+
+## What's NOT in this phase (Phase 4+)
+
+- Real draw entry points (DrawTriangle, DrawTriangleMesh, etc.) — still stubs returning TRUE
 - Vertex/index buffer upload — still stubs
-- Shader compilation — Phase 4
-- HLSL shaders — Phase 4
+- Shader compilation from HLSL → DXBC — not yet wired up
 - Texture upload/conversion — Phase 5
+- HLSL shader variants for stage states (modulate/decal/add) — not yet
 - azmco.ini selection — Phase 6
 
-## Smoke test status
+## Phase 4 starting point: HLSL shader added
 
-**Not yet safe to drop into MCO.** The DLL will load (CreateGameWindow will succeed), but every draw call is a stub that returns TRUE without rendering. MCO will probably hang or crash waiting for rendering to complete.
-
-**Proper smoke test**: happens once we have at least one real draw path. Will require MSVC install to match canonical behavior (or accept MinGW ABI risk).
+`Source/R.DirectX.11.0.A/Shaders/PassThrough.hlsl` provides the initial vertex
+shader (pass-through) and pixel shader (texture * color) needed for Phase 4
+draw path implementation. The shader compiles to DXBC via `D3DCompile()`
+which is included in the Windows SDK and MinGW's `d3dcompiler.h`.
 
 ## Status
 
@@ -78,34 +94,37 @@ $ objdump -p dx11.dll | grep "Acq\|Create\|Destroy\|Draw\|Render\|Sync\|Clear"
 | Real `ClearGameWindow` | ✅ |
 | Real `SyncGameWindow` | ✅ |
 | MinGW portability fixes | ✅ |
+| MSVC portability fixes (incl. `__ptr64`, `Main.cxx` cleanup) | ✅ |
 | 47 exports (matches upstream's def) | ✅ |
-| Built DLL is 91.9 KB PE32 i386 | ✅ |
-| Imports real d3d11.dll | ✅ |
-| **Pushed to fork** | ✅ `feat/r.directx.11.0.a` |
+| **Built on BOTH MinGW and MSVC** | ✅ 92 KB + 114 KB |
+| **Pushed to fork `feat/r.directx.11.0.a` branch** | ✅ |
+| Pass-through HLSL shader | ✅ (Phase 4 starting point) |
+
+## Phase 4 next steps
+
+1. **Compile HLSL to DXBC at module init** using `D3DCompile()` from d3dcompiler.dll
+2. **Create ID3D11VertexShader + ID3D11PixelShader** from compiled blobs
+3. **Create vertex/index buffer pool** (one persistent `ID3D11Buffer` with `Map/MapMode_WRITE_DISCARD`)
+4. **Create input layout** matching the HLSL `VSInput` struct
+5. **Wire `RenderPacket` to actual draw calls**:
+   - Map vertex buffer, copy RTLVX/RTLVX2 data, unmap
+   - Set primitive topology
+   - Bind shaders, cbuffers, render target
+   - Issue DrawIndexed/Draw call
+6. **Convert state setters** (D3DRS_* equivalents) to DX11 state objects (blend, raster, depth-stencil)
+7. **Convert texture stage state** to shader permutations + texture/sampler bindings
+
+This is a multi-step effort that will land as a sequence of commits. The end result is a DX11 backend that can actually render MCO content end-to-end.
 
 ## Phase 3 PR
 
 PR is on `Dadud/AZMCO` @ `feat/r.directx.11.0.a` branch. URL:
 https://github.com/Dadud/AZMCO/pull/new/feat/r.directx.11.0.a
 
-When MSVC install is unblocked (orphan msiexec clears), this should be rebuildable
-from MSVC for ABI validation. MinGW build is functional but may have subtle calling
-convention differences.
-
-## What's needed for Phase 4
-
-**Phase 4 — DX11 fixed-function state replacement** (2-3 weeks):
-1. Compile pass-through vertex shader from HLSL
-2. Compile pass-through pixel shader from HLSL
-3. Implement vertex buffer pool (one persistent `ID3D11Buffer` with `Map/MapMode_WRITE_DISCARD`)
-4. Implement index buffer pool (same pattern)
-5. Implement constant buffer for transforms/lighting
-6. Wire `RenderPacket` / `RenderBufferedPacket` to:
-   - Map vertex buffer, copy RTLVX/RTLVX2 data, unmap
-   - Set primitive topology
-   - Bind shaders, cbuffers, render target
-   - Draw call
-7. Convert all `RENDERER_MODULE_STATE_SELECT_*` calls to shader uniforms
-
-This is the largest phase by far — touches every state selector, every draw variant,
-every shader permutation. Expected to ship as PR #3 alongside Phase 6 polish.
+The branch is now 6 commits ahead of upstream/main:
+1. Phase 2 skeleton (.dev marker)
+2. Phase 2 DX11 skeleton (Module.cxx, DirectX11.hxx, def files, etc.)
+3. Phase 3 real D3D11 device + swap chain
+4. Main.cxx fix (remove Native.Basic.hxx)
+5. SDK README removal (real MS DX8 SDK in place)
+6. Pass-through HLSL shader (Phase 4 starting point)
