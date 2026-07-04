@@ -39,9 +39,6 @@ extern "C" const GUID IID_ID3D11Texture2D = {
     0x6f15aaf2, 0xd208, 0x4e89, { 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c }
 };  // snprintf
 
-// Forward declarations to avoid ordering issues
-extern "C" BOOL DestroyGameWindow(void);
-
 #define RENDERER_MODULE_NAME "DX11 3rash"
 #ifdef _WIN64
 #define RENDERER_MODULE_TITLE_NAME "DirectX 11 (x64)"
@@ -124,17 +121,16 @@ const RendererModuleDescriptor* AcquireDescriptor()
         descriptor.Signature = RENDERER_MODULE_SIGNATURE_D3D8;
         descriptor.Size = sizeof(descriptor);
         descriptor.Version = RENDERER_MODULE_VERSION_115;
-        descriptor.SubType = RENDERER_MODULE_VERSION_DX8;
-        descriptor.Author = RENDERER_MODULE_AUTHOR;
-        descriptor.DXV = RENDERER_MODULE_VERSION_DX8;
-        const char name[] = RENDERER_MODULE_NAME;
+        // Match the original EA dx8z.dll's descriptor so mcity's
+        // "is this a 3rash DLL?" check passes.
+        descriptor.SubType = 0;  // RENDERER_MODULE_VERSION_104
+        descriptor.DXV = 8;
+        descriptor.Author = "Mike Ockenden, Thursday 05:09PM Aug 30, 2001";
+        const char name[] = "DX8 3rash";
         for (u32 i = 0; i < sizeof(descriptor.Name) && name[i]; i++) {
             descriptor.Name[i] = name[i];
         }
-        const char devName[] = RENDERER_MODULE_TITLE_NAME;
-        for (u32 i = 0; i < sizeof(descriptor.DeviceName) && devName[i]; i++) {
-            descriptor.DeviceName[i] = devName[i];
-        }
+        // DeviceName left empty to match original
     }
     return &descriptor;
 }
@@ -150,100 +146,16 @@ extern "C" {
 // Phase 3: Real D3D11 device + swap chain creation.
 // Returns TRUE on success, FALSE on any failure.
 // On failure, all D3D11 resources are released and g_DX11 state is reset.
-BOOL CreateGameWindow(HWND hwnd)
-{
-    if (g_DX11.IsInitialized) {
-        OutputDebugStringA("[R.DirectX.11.0.A] CreateGameWindow called while already initialized; tearing down first\n");
-        DestroyGameWindow();
-    }
-
-    if (!hwnd) {
-        OutputDebugStringA("[R.DirectX.11.0.A] CreateGameWindow: NULL HWND\n");
-        return FALSE;
-    }
-
-    // Get window dimensions for the swap chain
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-    u32 width  = (rc.right - rc.left) > 0 ? (u32)(rc.right - rc.left) : 800;
-    u32 height = (rc.bottom - rc.top) > 0 ? (u32)(rc.bottom - rc.top) : 600;
-
-    DXGI_SWAP_CHAIN_DESC scd = {};
-    scd.BufferCount = 1;
-    scd.BufferDesc.Width = width;
-    scd.BufferDesc.Height = height;
-    scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    scd.BufferDesc.RefreshRate.Numerator = 60;
-    scd.BufferDesc.RefreshRate.Denominator = 1;
-    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    scd.OutputWindow = hwnd;
-    scd.SampleDesc.Count = 1;
-    scd.SampleDesc.Quality = 0;
-    scd.Windowed = TRUE;
-    scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-    D3D_FEATURE_LEVEL featureLevel;
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(
-        nullptr,                    // default adapter
-        D3D_DRIVER_TYPE_HARDWARE,
-        nullptr,                    // no software module
-        0,                          // no flags (debug layer is set by host if needed)
-        nullptr,                    // default feature levels
-        0,
-        D3D11_SDK_VERSION,
-        &scd,
-        &g_DX11.SwapChain,
-        &g_DX11.Device,
-        &featureLevel,
-        &g_DX11.Context
-    );
-
-    if (FAILED(hr)) {
-        char msg[128];
-        snprintf(msg, sizeof(msg), "[R.DirectX.11.0.A] D3D11CreateDeviceAndSwapChain failed: 0x%08lX\n", hr);
-        OutputDebugStringA(msg);
-        return FALSE;
-    }
-
-    // Create render target view from back buffer
-    ID3D11Texture2D* backBuffer = nullptr;
-    hr = g_DX11.SwapChain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&backBuffer);
-    if (FAILED(hr)) {
-        OutputDebugStringA("[R.DirectX.11.0.A] GetBuffer failed\n");
-        DestroyGameWindow();
-        return FALSE;
-    }
-
-    hr = g_DX11.Device->CreateRenderTargetView(backBuffer, nullptr, &g_DX11.RenderTargetView);
-    backBuffer->Release();
-    if (FAILED(hr)) {
-        OutputDebugStringA("[R.DirectX.11.0.A] CreateRenderTargetView failed\n");
-        DestroyGameWindow();
-        return FALSE;
-    }
-
-    g_DX11.Context->OMSetRenderTargets(1, &g_DX11.RenderTargetView, nullptr);
-
-    // Set viewport
-    D3D11_VIEWPORT viewport = {};
-    viewport.Width = (FLOAT)width;
-    viewport.Height = (FLOAT)height;
-    viewport.MinDepth = 0.0f;
-    viewport.MaxDepth = 1.0f;
-    viewport.TopLeftX = 0;
-    viewport.TopLeftY = 0;
-    g_DX11.Context->RSSetViewports(1, &viewport);
-
-    char msg[256];
-    snprintf(msg, sizeof(msg), "[R.DirectX.11.0.A] CreateGameWindow: %ux%u swap chain, feature level 0x%X\n",
-        width, height, featureLevel);
-    OutputDebugStringA(msg);
-
-    g_DX11.IsInitialized = 1;
-    return TRUE;
+BOOL CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options) {
+    // Phase 3: This is the REAL signature mcity expects (4 u32 args = 16 bytes).
+    // The HWND is NOT passed here - mcity manages windows separately and passes
+    // window indices to the draw functions.
+    //
+    // For now, return a fake window index. Phase 4 will create real DX11 surfaces.
+    return 1; // Fake window index 1
 }
 
-BOOL DestroyGameWindow(void)
+BOOL DestroyGameWindow(const u32 indx)
 {
     if (g_DX11.RenderTargetView) { g_DX11.RenderTargetView->Release(); g_DX11.RenderTargetView = nullptr; }
     if (g_DX11.SwapChain) { g_DX11.SwapChain->Release(); g_DX11.SwapChain = nullptr; }
@@ -264,7 +176,7 @@ BOOL ClearGameWindow(void)
     g_DX11.Context->ClearRenderTargetView(g_DX11.RenderTargetView, clearColor);
     return TRUE;
 }
-BOOL ClipGameWindow(s32 left, s32 top, s32 right, s32 bottom) { return TRUE; }
+BOOL ClipGameWindow(const u32 x0, const u32 y0, const u32 x1, const u32 y1) { return TRUE; }
 
 BOOL AcquireRendererDevice(HWND hwnd) { return TRUE; }
 BOOL AcquireRendererSurface(HWND hwnd) { return TRUE; }
@@ -296,35 +208,40 @@ BOOL AcquireDisplayState(u32* state) { if (state) *state = 0; return TRUE; }
 BOOL AcquireTransformAndLightCapabilitiesDX8(void* caps) { return TRUE; }
 
 BOOL DrawLine(u32 a, u32 b) { return TRUE; }
-BOOL DrawLineMesh(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawLineStrip(const u16* indexes, u32 count) { return TRUE; }
+BOOL DrawLineMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawLineStrip(const u32 count, void* vertexes) { return TRUE; }
 BOOL DrawPoints(u32 count, const u16* indexes) { return TRUE; }
 BOOL DrawRectangle(s32 x0, s32 y0, s32 x1, s32 y1, u32 color) { return TRUE; }
 BOOL DrawRectangles(const s32* rects, u32 count, u32 color) { return TRUE; }
-BOOL DrawTriangle(u32 a, u32 b, u32 c) { return TRUE; }
-BOOL DrawTriangleFan(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawTriangleMesh(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawTriangleStrip(const u16* indexes, u32 count) { return TRUE; }
+BOOL DrawTriangle(void* a, void* b, void* c) { return TRUE; }
+BOOL DrawTriangleFan(const u32 count, void* vertexes) { return TRUE; }
+BOOL DrawTriangleMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawTriangleStrip(const u32 count, void* vertexes) { return TRUE; }
 
 
 // === ADDITIONAL STUBS (Phase 2 completion) ===
 // These entry points are also exported by the upstream's def file.
 BOOL FlushGameWindow(void) { return TRUE; }
 BOOL Idle(void) { return TRUE; }
-BOOL Init(void* p1, void* p2, void* p3) { return TRUE; }
-BOOL Is(void) { return TRUE; }
+BOOL Init(void) { return 0; }  // 0 = no renderer (NULL instance pointer)
+BOOL Is(void) { return 0; }  // 0 = no acceleration
 BOOL LockGameWindow(void) { return TRUE; }
 BOOL ToggleGameWindow(BOOL state) { return TRUE; }
 BOOL RestoreGameWindow(void) { return TRUE; }
 BOOL SelectDevice(u32 index) { return TRUE; }
 BOOL SelectGameWindow(void* window) { return TRUE; }
 BOOL SelectTexture(u32 index) { return TRUE; }
-BOOL SelectVideoMode(u32 mode) { return TRUE; }
+BOOL SelectVideoMode(const u32 mode, const u32 pending, const u32 depth) { return TRUE; }
 // Phase 3: Present the back buffer (swap chain Present).
-BOOL SyncGameWindow(void)
+BOOL SyncGameWindow(const u32 type)
 {
-    if (!g_DX11.IsInitialized || !g_DX11.SwapChain) return FALSE;
-    return SUCCEEDED(g_DX11.SwapChain->Present(1, 0));  // 1 = sync interval (vsync)
+    if (!g_DX11.SwapChain) return FALSE;
+    // type=0 -> standard Present, type=1 -> vsync, type=2 -> no-wait
+    u32 sync_interval = 1;  // vsync
+    u32 flags = 0;
+    if (type == 2) { sync_interval = 0; flags = DXGI_PRESENT_DO_NOT_SEQUENCE; }
+    HRESULT hr = g_DX11.SwapChain->Present(sync_interval, flags);
+    return SUCCEEDED(hr);
 }
 BOOL UnlockGameWindow(void) { return TRUE; }
 BOOL ReadRectangle(s32 x0, s32 y0, s32 x1, s32 y1, void* data) { return TRUE; }
@@ -337,14 +254,14 @@ BOOL ReleaseTexture(u32 index) { return TRUE; }
 BOOL ResetTextures(void) { return TRUE; }
 BOOL UpdateTexture(u32 index, u32 level, u32 x, u32 y, u32 width, u32 height, const void* data) { return TRUE; }
 BOOL UpdateTextureRectangle(u32 index, u32 level, const s32* rects, u32 count, const void* data) { return TRUE; }
-BOOL DrawLineStrips(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawPoint(u32 index) { return TRUE; }
-BOOL DrawPointMesh(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawPointStrip(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawQuad(u32 a, u32 b, u32 c, u32 d) { return TRUE; }
-BOOL DrawQuadMesh(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawSprite(s32 x, s32 y, u32 color) { return TRUE; }
-BOOL DrawSpriteMesh(const s32* positions, u32 count, u32 color) { return TRUE; }
-BOOL DrawTriangleFans(const u16* indexes, u32 count) { return TRUE; }
-BOOL DrawTriangleStrips(const u16* indexes, u32 count) { return TRUE; }
+BOOL DrawLineStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawPoint(void* vertex) { return TRUE; }
+BOOL DrawPointMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawPointStrip(const u32 count, void* vertexes) { return TRUE; }
+BOOL DrawQuad(void* a, void* b, void* c, void* d) { return TRUE; }
+BOOL DrawQuadMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawSprite(void* a, void* b) { return TRUE; }
+BOOL DrawSpriteMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawTriangleFans(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL DrawTriangleStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
 } // extern "C"

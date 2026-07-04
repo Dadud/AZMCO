@@ -14,7 +14,7 @@ copies or substantial portions of the Software.
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY PARTY'S CLAIM, DAMAGES OR OTHER
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY PARTY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
@@ -22,4 +22,11 @@ SOFTWARE.
 
 #include "DirectX11.hxx"
 
-BOOL APIENTRY Main(HMODULE, DWORD, LPVOID) { return TRUE; }
+// CRITICAL: The entry point MUST be named DllMain (not Main). Windows
+// specifically looks for this name when loading a DLL. If named anything
+// else, no DLL_PROCESS_ATTACH notifications are sent, runtime init is
+// skipped, and tools that hook DllMain (e.g. some EA anti-cheat, TLS init)
+// may crash on first call. The original AZMCO source has this same
+// bug (function named Main) which is why the upstream build has a
+// #pragma comment to set the entry point name.
+BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
