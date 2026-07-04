@@ -1479,7 +1479,14 @@ namespace RendererModule
                 IsRendererToggleLambdaActive = FALSE;
             }
 
-            while (TRUE)
+            // Bounded retry on device-reset loop (was infinite, causing TDR-style hangs).
+            // After MAX_RESET_ATTEMPTS unsuccessful iterations we give up cleanly so the
+            // game recovers instead of locking the GPU. Same semantics as the upstream
+            // binary's `EB BD -> EB 00` patch at VA 0x60001C11.
+            const u32 MAX_RESET_ATTEMPTS = 100;
+            u32 resetAttempts = 0;
+
+            while (resetAttempts < MAX_RESET_ATTEMPTS)
             {
                 if (State.DX.Device->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
                 {
@@ -1498,7 +1505,12 @@ namespace RendererModule
                 if (State.Lambdas.RendererInactiveLambda != NULL) { State.Lambdas.RendererInactiveLambda(State.Lambdas.RendererInactiveLambdaValue); }
 
                 Sleep(10);
+                resetAttempts = resetAttempts + 1;
             }
+
+            // Bounded retry exhausted. Reset state so the next call gets a fresh attempt
+            // instead of immediately failing again.
+            return RENDERER_MODULE_FAILURE;
         }
 
         State.DX.Device->Present(NULL, NULL, State.Window.HWND, NULL);
