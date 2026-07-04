@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Build AZMCO DX11 backend (Phase 2 skeleton) with MinGW32
-# Output: ../build/mingw32-release/R.DirectX.11.0.A/dx11.dll
+# Build AZMCO DX11 backend (Phase 3) with MinGW32
+# Output: ../build/mingw32-release-dx11/dx11.dll
+#
+# IMPORTANT: This build uses MinGW gcc for BOTH compile AND link, passing
+# the .def file directly to the linker. This is the only way to get the
+# canonical _THRASH_xxx@N export names (MSVC link.exe strips the @N from
+# def LHS names when the function is __stdcall).
+#
+# Def file MUST start with "LIBRARY <name>" (not bare "LIBRARY").
 
 set -euo pipefail
 
@@ -11,7 +18,7 @@ OUT="$WORKSPACE/build/mingw32-release-dx11"
 TOOLCHAIN="${MINGW32:-/c/Users/Dadud/tools/mingw32/mingw32/bin}"
 SHIM="$SCRIPT_DIR/include/msvc_compat.hxx"
 
-echo "AZMCO DX11 backend build (Phase 2 skeleton)"
+echo "AZMCO DX11 backend build (Phase 3)"
 echo "  upstream: $UPSTREAM"
 echo "  output:   $OUT"
 echo "  toolchain:$TOOLCHAIN"
@@ -24,16 +31,15 @@ fi
 cd "$UPSTREAM/Source/R.DirectX.11.0.A"
 
 # === Verify d3d11.h is available ===
-# MinGW32 ships d3d11.h at $MINGW32_PREFIX/include/d3d11.h
-# (We have D3D11 headers via Windows SDK / MinGW; no separate install needed.)
 D3D11_HEADER=$(find /c/Users/Dadud/tools/mingw32 -name "d3d11.h" 2>/dev/null | head -1)
 if [[ -z "$D3D11_HEADER" ]]; then
-    echo "ERROR: d3d11.h not found in MinGW32. Need Windows SDK or MinGW with d3d11 headers."
+    echo "ERROR: d3d11.h not found"
     exit 1
 fi
 echo "  d3d11:   $D3D11_HEADER"
 
 GCC="$TOOLCHAIN/i686-w64-mingw32-gcc.exe"
+DLLTOOL="$TOOLCHAIN/dlltool.exe"
 to_win() { cygpath -w "$1"; }
 
 INCLUDES=(
@@ -44,11 +50,9 @@ INCLUDES=(
 )
 SHIM_PATH="$(to_win "$SHIM")"
 
-# Ensure OUT exists before log redirect
 mkdir -p "$OUT"
 
-# Skeleton sources only — Phase 2.
-# Future phases will add Renderer.cxx, Images.cxx, etc. after D3D8->D3D11 conversion.
+# === Compile sources ===
 SOURCES=(Module.cxx Main.cxx)
 OBJECTS=()
 FAILED=0
@@ -74,34 +78,89 @@ if [[ $FAILED -gt 0 ]]; then
     exit 1
 fi
 
-# === Link to dx11.dll ===
-echo
-echo "Linking dx11.dll..."
-DLLTOOL="$TOOLCHAIN/dlltool.exe"
-LD="$TOOLCHAIN/i686-w64-mingw32-gcc.exe"
-
-# Reuse upstream's def file (same export names)
+# === Generate the import lib via dlltool ===
+# Def file MUST start with "LIBRARY <name>" (not just "LIBRARY")
 DEF_FIXED="$OUT/Renderer.Module.fixed.def"
-sed 's/\r$//' Renderer.Module.MSVC.def | awk 'BEGIN{ORS="\r\n"} {
-    gsub(/LIBRARY EXPORTS/, "LIBRARY\r\nEXPORTS");
-    print
-}' > "$DEF_FIXED"
+cat > "$DEF_FIXED" << 'DEFLIB'
+LIBRARY dx11
+EXPORTS
+    _THRASH_about@0 = AcquireDescriptor                     @1
+    _THRASH_clearwindow@0 = ClearGameWindow                 @2
+    _THRASH_clip@16 = ClipGameWindow                        @3
+    _THRASH_createwindow@16 = CreateGameWindow              @4
+    _THRASH_destroywindow@4 = DestroyGameWindow             @5
+    _THRASH_drawline@8 = DrawLine                           @6
+    _THRASH_drawlinemesh@12 = DrawLineMesh                  @7
+    _THRASH_drawlinestrip@12 = DrawLineStrips               @8
+    _THRASH_drawlinestrip@8 = DrawLineStrip                 @9
+    _THRASH_drawpoint@4 = DrawPoint                         @10
+    _THRASH_drawpointmesh@12 = DrawPointMesh                @11
+    _THRASH_drawpointstrip@8 = DrawPointStrip               @12
+    _THRASH_drawquad@16 = DrawQuad                          @13
+    _THRASH_drawquadmesh@12 = DrawQuadMesh                  @14
+    _THRASH_drawsprite@8 = DrawSprite                       @15
+    _THRASH_drawspritemesh@12 = DrawSpriteMesh              @16
+    _THRASH_drawtri@12 = DrawTriangle                       @17
+    _THRASH_drawtrifan@12 = DrawTriangleFans                @18
+    _THRASH_drawtrifan@8 = DrawTriangleFan                  @19
+    _THRASH_drawtrimesh@12 = DrawTriangleMesh               @20
+    _THRASH_drawtristrip@12 = DrawTriangleStrips            @21
+    _THRASH_drawtristrip@8 = DrawTriangleStrip              @22
+    _THRASH_flushwindow@0 = FlushGameWindow                 @23
+    _THRASH_getstate@4 = AcquireState                       @24
+    _THRASH_getwindowtexture@4 = AcquireGameWindowTexture   @25
+    _THRASH_idle@0 = Idle                                   @26
+    _THRASH_init@0 = Init                                   @27
+    _THRASH_is@0 = Is                                       @28
+    _THRASH_lockwindow@0 = LockGameWindow                   @29
+    _THRASH_pageflip@0 = ToggleGameWindow                   @30
+    _THRASH_readrect@20 = ReadRectangle                     @31
+    _THRASH_readrect@24 = ReadRectangles                    @32
+    _THRASH_restore@0 = RestoreGameWindow                   @33
+    _THRASH_selectdisplay@4 = SelectDevice                  @34
+    _THRASH_setstate@8 = SelectState                        @35
+    _THRASH_settexture@4 = SelectTexture                    @36
+    _THRASH_setvideomode@12 = SelectVideoMode               @37
+    _THRASH_sync@4 = SyncGameWindow                         @38
+    _THRASH_talloc@20 = AllocateTexture                     @39
+    _THRASH_tfree@4 = ReleaseTexture                        @40
+    _THRASH_treset@0 = ResetTextures                        @41
+    _THRASH_tupdate@12 = UpdateTexture                      @42
+    _THRASH_tupdaterect@36 = UpdateTextureRectangle         @43
+    _THRASH_unlockwindow@4 = UnlockGameWindow               @44
+    _THRASH_window@4 = SelectGameWindow                     @45
+    _THRASH_writerect@20 = WriteRectangle                   @46
+    _THRASH_writerect@24 = WriteRectangles                  @47
+DEFLIB
 
 IMPORT_LIB="$OUT/dx11.a"
 IMPORT_LIB_WIN="$(to_win "$IMPORT_LIB")"
 DEF_FIXED_WIN="$(to_win "$DEF_FIXED")"
+echo
+echo "Generating import lib via dlltool..."
 "$DLLTOOL" --dllname dx11.dll --def "$DEF_FIXED_WIN" --output-lib "$IMPORT_LIB_WIN" 2>&1 | head -5
 
+# === Link ===
+# CRITICAL: Pass the .def file directly to gcc as a linker input.
+# This makes the linker (ld) create the export table with the exact
+# names from the def file, including the @N stdcall decoration.
+# Without this, the linker auto-exports C++ symbol names.
+echo
+echo "Linking dx11.dll..."
 OBJECTS_WIN=()
 for obj in "${OBJECTS[@]}"; do
     OBJECTS_WIN+=("$(to_win "$obj")")
 done
 DLL_OUT_WIN="$(to_win "$OUT")/dx11.dll"
+DEF_FIXED_WIN="$(to_win "$DEF_FIXED")"
 
-"$LD" -shared -o "$DLL_OUT_WIN" "${OBJECTS_WIN[@]}" "$IMPORT_LIB_WIN" \
-    -ld3d11 -ldxgi -ld3dcompiler -lgdi32 -luser32 -lkernel32 -ladvapi32 2>&1 | head -30
+"$GCC" -shared -o "$DLL_OUT_WIN" \
+    "${OBJECTS_WIN[@]}" \
+    "$DEF_FIXED_WIN" \
+    "$IMPORT_LIB_WIN" \
+    -ld3d11 -ldxgi -ld3dcompiler -lkernel32 2>&1 | head -30
+
 RC=$?
-
 echo
 if [[ $RC -eq 0 && -f "$OUT/dx11.dll" ]]; then
     echo "✓ dx11.dll built: $OUT/dx11.dll"

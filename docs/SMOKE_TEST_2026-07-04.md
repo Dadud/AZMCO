@@ -1,93 +1,78 @@
 # DX11 Backend Smoke Test (2026-07-04)
 
-**Status: ✅ PASSED** — DX11 backend fully works as drop-in replacement for the EA original `dx8z.dll`.
+**Status**: Builds clean, exports correct, mcity crashes during init
 
-## What was tested
+## What was fixed
 
-Built a test harness that mimics mcity.exe's loading pattern:
-1. `LoadLibraryA("dx8z.dll")` (which is now the DX11 backend in disguise)
-2. `GetProcAddress` for all 42 `THRASH_*` exports
-3. Called `THRASH_createwindow` with a real HWND — **D3D11 device + swap chain created**
-4. Called `THRASH_clearwindow` — **cleared to dark blue**
-5. Called `THRASH_sync` — **`SwapChain->Present(1, 0)` ran (vsync'd)**
-6. Called `THRASH_destroywindow` — **all D3D11 resources released**
+1. **Export name decoration** — MinGW gcc linker with .def as direct input
+   preserves the `_THRASH_xxx@N` stdcall decorations that mcity looks for.
+   MSVC link.exe cannot do this (strips @N from def LHS).
 
-## Test output
+2. **Function signatures** — All entry points now use the correct argument
+   types per the upstream DX8 source (not my placeholders). For example:
+   - `CreateGameWindow(u32 width, u32 height, u32 format, u32 options)` — 4 u32 args
+   - `Init(void)` — no args (was wrongly `Init(void*,void*,void*)`)
+   - `DestroyGameWindow(u32 indx)` — single u32 arg
+   - `SyncGameWindow(u32 type)` — single u32 arg
 
-```
-Loaded dx8z.dll (DX11 backend in disguise) at 6E630000
-Created test HWND 001C048E
-Calling THRASH_createwindow...
-Result: TRUE (D3D11 device + swap chain created)
-Calling THRASH_clearwindow...
-Clear result: TRUE
-Calling THRASH_sync (present)...
-Sync result: TRUE
-Calling THRASH_destroywindow...
-Destroy result: TRUE
-```
+3. **Descriptor fields** — All match the original EA dx8z.dll:
+   - `Name = "DX8 3rash"`
+   - `SubType = 0` (RENDERER_MODULE_VERSION_104)
+   - `DXV = 8` (DirectX 8)
+   - `Author = "Mike Ockenden, Thursday 05:09PM Aug 30, 2001"`
+   - `DeviceName = ""` (empty)
+   - `Size = 208`, `Version = 115`, `Signature = 0x44334438`
 
-All five operations succeed. The DX11 backend creates a real `ID3D11Device`, `IDXGISwapChain`, and `ID3D11RenderTargetView`, binds the RTV to the OM stage, sets the viewport, and can present frames to a window.
+4. **DllMain** — Entry point function renamed from `Main` to `DllMain`
+   so Windows actually calls DLL_PROCESS_ATTACH.
 
-## What this proves
+## What's still broken
 
-- **DX11 backend is loadable** by mcity's `LoadLibraryA` + `GetProcAddress` pattern
-- **All 42 exports are findable** by name (Windows strips `@N` stdcall decoration automatically)
-- **Real D3D11 device creation works** on this hardware (NVIDIA RTX 3060, driver 610.62)
-- **Swap chain present works** (frame was actually submitted to GPU)
-- **Cleanup works** (no leaks, all references released)
+mcity.exe crashes at `read attempted @0x0000000C` (NULL pointer + 0xC offset).
+The crash happens immediately after `_THRASH_init@0` returns.
 
-## What this doesn't prove (next steps)
+### Why
 
-- **Draw calls** — `DrawTriangle`, `DrawLine`, etc. are still stubs returning TRUE without rendering. MCO would launch, initialize the device successfully, then hang waiting for visible frames.
-- **Asset formats** — no textures, no RTLVX/RTLVX2 upload paths yet
-- **State setters** — `D3DRS_*`/texture stage state not converted to DX11 state objects
+mcity's call sequence after loading dx8z.dll:
+1. `AcquireDescriptor()` → returns pointer to descriptor struct
+2. `Init()` → mcity expects a state pointer / device count
+3. mcity reads `return_value + 0xC` as if it were a function pointer
+4. If our `Init` returns 0 (NULL), `0 + 0xC = 0xC` → access violation
+5. If our `Init` returns 1, `1 + 0xC = 0xD` (also crashes)
 
-These are Phase 4+ work.
+The crash always hits 0xC because mcity derefs `state + 0xC` (probably a vtable or function pointer table).
 
-## How to reproduce
+### Fix needed
 
-```bash
-# 1. Build the test (MSVC)
-cl.exe /nologo /EHsc ^
-    scripts/test_dx11_smoke.cpp ^
-    user32.lib d3d11.lib dxgi.lib ^
-    /Fe:test_dx11_smoke.exe
+The `Init` function must set up the renderer state struct that mcity expects
+to read. The upstream's `Init` does this by:
+1. Creating Direct3D8 instance
+2. Acquiring device count + formats
+3. Initializing texture state states
+4. Calling lambdas (callbacks into mcity)
+5. Setting `State.DX.IsInit = TRUE`
+6. Returning `State.Devices.Count`
 
-# 2. Build the DX11 backend (MSVC)
-scripts/build_msvc_dx11.bat
+For our DX11 backend to work, we need to either:
+1. **Implement real DX11 init** that returns a valid state pointer
+2. **Stub it but return a fake state pointer** that has a valid vtable at offset 0xC
+3. **Find the right return value** that mcity handles gracefully
 
-# 3. Deploy as dx8z.dll (needs admin)
-#    The test harness will use whatever dx8z.dll is in MCO's install dir
-
-# 4. Run
-test_dx11_smoke.exe
-```
+The cleanest fix is Phase 4 work: implement the real state struct with all
+the function pointers mcity expects to call through it.
 
 ## Files
 
-- `scripts/test_dx11_smoke.cpp` — test source
-- `scripts/build_msvc_dx11.bat` — DX11 backend build script
-- MCO's `dx8z.dll` was the original EA one, then replaced with our DX11 build for testing. **Original EA dx8z.dll is preserved** at `~/Backups/Motor City Online backup 20260630-222817/dx8z.preserved.original.dll`.
+- `~/projects/azmco-dev/build/mingw32-release-dx11/dx11.dll` — MinGW build (50 KB)
+- `~/projects/azmco-dev/scripts/build_dx11.sh` — Updated to pass .def directly to gcc
+- `~/projects/azmco-dev/upstream/Source/R.DirectX.11.0.A/Module.cxx` — Updated signatures
+- `~/projects/azmco-dev/upstream/Source/R.DirectX.11.0.A/Main.cxx` — DllMain rename
+- MCO install: `C:\Program Files (x86)\EA Games\Motor City Online\dx8z.dll`
+- Original EA preserved: `~/Backups/Motor City Online backup 20260630-222817/dx8z.preserved.original.dll`
 
-## Restoring original MCO
+## Recovery
 
-If you want to restore the original EA dx8z.dll:
-
-```bash
-# Elevated
-copy "C:\Users\Dadud\Backups\Motor City Online backup 20260630-222817\dx8z.preserved.original.dll" ^
-     "C:\Program Files (x86)\EA Games\Motor City Online\dx8z.dll"
+If MCO is broken, restore the original:
 ```
-
-The DX11 backend is still at `~/projects/azmco-dev/build/msvc-Release-x86/dx11/dx11.dll` for re-deployment.
-
-## Next: Phase 4
-
-Phase 4 wires up actual draw paths. With the smoke test confirming the lifecycle works, the remaining work is:
-- Compile HLSL → DXBC (D3DCompile from d3dcompiler.dll)
-- Create vertex/index buffer pool
-- Implement `RenderPacket` to do real draws
-- Convert `D3DRS_*` state setters to DX11 state objects
-
-Once draw calls work, MCO will be able to render content via the DX11 backend. This is the biggest remaining phase but the foundation is now proven.
+copy /Y "C:\Users\Dadud\Backups\Motor City Online backup 20260630-222817\dx8z.preserved.original.dll" "C:\Program Files (x86)\EA Games\Motor City Online\dx8z.dll"
+```
