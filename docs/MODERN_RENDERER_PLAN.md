@@ -1,16 +1,27 @@
 # Modern Render Engine Development Plan
 
-Goal: produce a working **modern Vulkan or DirectX 11/12 renderer** for AZMCO that replaces the DirectX 8 fixed-function pipeline with something that runs on Win10/11+ with modern GPUs.
+Goal: produce a working **modern DirectX 11 renderer** for AZMCO that replaces the DirectX 8 fixed-function pipeline with something that runs on Win10/11+ with modern GPUs. Vulkan port comes after DX11 is feature-complete.
 
-## Why both options matter
+## Decisions (locked in 2026-07-03)
+
+1. **DX11 first.** Vulkan port comes later (Phase 7).
+2. **Phased PRs.** Each phase ships something working and upstreamable.
+3. **Skip MCODeadlockFix.dll.** The DX11 backend will have windowed mode + reset-loop fix built in. Existing MCODeadlockFix becomes redundant — we'll write a migration note but won't carry it forward.
+4. **64-bit from day 1.** All new code targets x64 where possible. Win32 stays only where required (MCO's `mcity.exe` is 32-bit and we're a DLL injected into it, so the *renderer DLL itself* must be 32-bit WOW64, but dev tools and test harnesses are 64-bit).
+
+**Important constraint on #4**: MCO's `mcity.exe` is a 32-bit process. The renderer DLL we ship must be **32-bit** to load into it. So "64-bit from day 1" means:
+- All dev tooling (compilers, IDEs, Vulkan SDK install) installs 64-bit
+- Test harnesses, asset extractors, modern tools build 64-bit
+- The renderer DLL itself stays 32-bit (WOW64)
+- 64-bit renderer becomes possible if/when MCO gets a 64-bit re-release
+
+## Why DX11 first, not Vulkan or DX12
 
 | API | Pros | Cons |
 |---|---|---|
 | **Vulkan** | Linux/Mac portable, lowest CPU overhead, future-proof | Big surface area (1000s of lines for boilerplate), need SPIR-V shaders, harder learning curve |
 | **DirectX 11** | Familiar D3D9-style API, smaller than DX12, Windows-only | Less portable, slightly higher overhead |
 | **DirectX 12** | Lowest latency, best multi-GPU | Massive boilerplate, command lists + descriptors + heaps, Windows 10+ only |
-
-**My pick: DirectX 11 first, then Vulkan.**
 
 DX11 is the pragmatic choice because:
 - DX8 → DX11 has a known migration path (DX10/11 retain the D3D pipeline mental model)
@@ -31,32 +42,31 @@ Source/AZX/                       ← engine-agnostic core (DO NOT MODIFY)
 ├── RendererModule.Import.hxx     ← shared host imports (mcity.exe calls)
 └── (Basic, Graphics, Mathematics, Native utility headers)
 
+Source/R.DirectX.7.0.A/          ← DX7/DDraw renderer (346 KB, NFS lineage)
 Source/R.DirectX.8.0.A/          ← existing backend (374 KB, builds clean)
 Source/R.DirectX.8.0.M/          ← post-update renderer (246 KB, similar shape)
-Source/R.DirectX.7.0.A/          ← DX7/DDraw renderer (346 KB, NFS lineage)
 Source/R.SoftWare.A/             ← software renderer (105 KB, reference impl)
 
 Source/Launcher/                   ← MFC launcher (88 KB) — needs Win32 build
 Source/Implode/                    ← PKWARE decompression (12 KB) — pure C, easy
 ```
 
-The renderer interface in `RendererModule.Basic.hxx` is **the key abstraction**. Every backend implements it. A new `R.DirectX.11.0.A/` (or `R.Vulkan.1.0.A/`) folder just plugs into the same interface.
+The renderer interface in `RendererModule.Basic.hxx` is **the key abstraction**. Every backend implements it. A new `R.DirectX.11.0.A/` folder just plugs into the same interface.
 
 ## Phased roadmap — 8 phases, ordered by value-to-effort
 
 ### Phase 0 — Prerequisites (1-2 days)
 **Goal**: solid toolchain + working reference builds before writing any new code.
 
-- [ ] Resolve MSVC install blocker (wait for orphan msiexec, or run vs_bootstrapper.exe manually)
-- [ ] Get **MSVC** build of `R.DirectX.8.0.A` working — produces canonical dx8z.dll
+- [ ] Resolve MSVC install blocker. **Install 64-bit Build Tools + 32-bit cross-tools** so we can build both targets.
+- [ ] Get **MSVC** build of `R.DirectX.8.0.A` working (32-bit DLL, since that's what mcity.exe loads)
 - [ ] Verify MinGW + MSVC builds produce functionally equivalent output (drop-in compatible)
-- [ ] Apply the 3 pending tweaks from prior session:
-  - [ ] Bounded-retry fix to DX8 reset loop (line 1482 in `R.DirectX.8.0.A/Renderer.cxx`)
-  - [ ] Windowed mode toggle via `azmco.ini [DX8] WindowedMode`
-  - [ ] Resolution override via `azmco.ini [DX8] Width/Height`
-- [ ] Build the rest of the existing components: `R.DirectX.8.0.M`, `Source/Implode`, `Source/Launcher`
+- [ ] Apply **only the reset-loop bounded-retry fix** to DX8 source (line 1482 in `R.DirectX.8.0.A/Renderer.cxx`). Skip the windowed-mode and resolution tweaks — DX11 backend will own those.
+- [ ] Build the rest of the existing 32-bit components: `R.DirectX.8.0.M`, `Source/Implode`, `Source/Launcher`
+- [ ] Install 64-bit **Vulkan SDK** from LunarG (for shader tooling in Phase 4+)
+- [ ] Install **DirectXTex** (Microsoft, MIT-licensed) for texture format conversion in Phase 5
 
-**Exit criteria**: `dx8z.dll` from MinGW and MSVC both run MCO successfully with all 3 tweaks applied.
+**Exit criteria**: `dx8z.dll` from MinGW and MSVC both run MCO successfully with reset-loop fix applied. 64-bit toolchain installed for dev use.
 
 ### Phase 1 — Renderer interface audit (2-3 days)
 **Goal**: understand what every entry point in `RendererModule.Basic.hxx` does, document, identify gaps for modern APIs.
@@ -81,7 +91,7 @@ The renderer interface in `RendererModule.Basic.hxx` is **the key abstraction**.
 **Goal**: stub `R.DirectX.11.0.A/` that loads, returns valid handles, doesn't crash MCO.
 
 - [ ] Copy `R.DirectX.8.0.A/` to `R.DirectX.11.0.A/`
-- [ ] Rename files: `DirectX.hxx` → `DirectX11.hxx`, `Renderer.Module.MSVC.def` → `Renderer.Module.MSVC.def` (same exports)
+- [ ] Rename files: `DirectX.hxx` → `DirectX11.hxx`, `Renderer.Module.MSVC.def` stays (same exports)
 - [ ] Strip D3D8-specific calls; replace with `ID3D11Device` / `ID3D11DeviceContext` interfaces
 - [ ] Implement `Direct3DCreate11`-equivalent (just create the device from DXGI factory)
 - [ ] Stub `CreateDevice` and `Reset` — return success without doing anything
@@ -133,21 +143,22 @@ This is the **hardest phase**. AZMCO sets ~50 different state combinations per d
 **Exit criteria**: textures show correctly with right colors.
 
 ### Phase 6 — DX11 polish (1-2 weeks)
-**Goal**: ship-quality DX11 renderer that matches DX8 feature parity.
+**Goal**: ship-quality DX11 renderer that matches DX8 feature parity AND replaces MCODeadlockFix.dll functionality.
 
-- [ ] Resolution override via `azmco.ini`
-- [ ] Windowed/borderless toggle
-- [ ] VSync control
+- [ ] Resolution override via `azmco.ini [DX11] Width/Height` — replaces what MCODeadlockFix does
+- [ ] Windowed/borderless toggle via `azmco.ini [DX11] Windowed`
+- [ ] VSync control via `azmco.ini [DX11] VSync`
 - [ ] Hot-reload of `azmco.ini` while running
 - [ ] Logging via OutputDebugString + `dx11_render.log`
 - [ ] Performance counters (FPS, draw calls, texture memory)
+- [ ] **Migration note**: document that MCODeadlockFix.dll is now redundant, can be removed from MCO install
 
-**Exit criteria**: DX11 backend works as drop-in replacement for DX8 with no crashes.
+**Exit criteria**: DX11 backend works as drop-in replacement for DX8 with no crashes. MCODeadlockFix.dll removable.
 
 ### Phase 7 — Vulkan backend (3-4 weeks)
 **Goal**: port the working DX11 backend to Vulkan.
 
-- [ ] Set up Vulkan SDK (download from LunarG)
+- [ ] Set up Vulkan SDK (already installed in Phase 0)
 - [ ] Choose Vulkan loader approach (dynamically linked vs bundled)
 - [ ] Create instance, physical device, logical device, queues
 - [ ] Swap chain via VK_KHR_swapchain
@@ -170,7 +181,6 @@ Vulkan's biggest cost is upfront: ~500 lines of boilerplate before drawing anyth
 - [ ] Mac build via MoltenVK (translates Vulkan → Metal)
 - [ ] Replace DirectInput with `SDL_GameController` (modern gamepads/XInput)
 - [ ] Package as AppImage / DMG / Steam dep
-- [ ] 64-bit compile path
 
 **Exit criteria**: MCO runs natively on Linux + Mac.
 
@@ -190,32 +200,26 @@ Vulkan's biggest cost is upfront: ~500 lines of boilerplate before drawing anyth
 
 **Total: 3-4 months to Vulkan-on-Windows**, ~4-5 months to Linux/Mac native.
 
-## Upstreamable PRs along the way
+## Upstreamable PRs
 
 | Phase | PR | What |
 |---|---|---|
-| 0 | #1 | Reset loop bounded retry |
-| 0 | #2 | Windowed mode toggle |
-| 0 | #3 | Resolution override |
-| 2 | #4 | DX11 backend skeleton (compiles but renders nothing) |
-| 6 | #5 | DX11 backend feature-complete |
-| 7 | #6 | Vulkan backend |
+| 0 | #1 | Reset loop bounded retry (32-bit DLL, drop-in) |
+| 2 | #2 | DX11 backend skeleton (compiles but renders nothing) |
+| 6 | #3 | DX11 backend feature-complete with built-in windowed/reset fixes |
+| 7 | #4 | Vulkan backend |
 
 All of these are MIT-licensed contributions americusmaximus has explicitly invited.
 
-## What I'm NOT doing in this plan
+Note: The windowed-mode and resolution-override settings are **rolled into PR #3** (DX11 backend), not separate PRs. The DX11 backend owns those features instead of patching DX8.
+
+## What we're NOT doing in this plan
 
 - **Replacing MCO's netcode** — separate project, not in scope
 - **Asset extraction improvements** — that's `mco-re` (your other repo)
 - **Modernization of `Source/Launcher`** — it works, leave it
 - **Server emulator** — that's `rustymotors/server`, different project
-
-## Decision points needing your input
-
-1. **DX11 vs Vulkan first?** — I recommend DX11 first. Vulkan-only is faster but locks out Windows users with old drivers.
-2. **Single huge PR vs phased PRs?** — Phased PRs match this plan. Each phase ships something working.
-3. **Keep MCODeadlockFix.dll around?** — Once DX11 has windowed-mode + reset-loop fix built in, MCODeadlockFix becomes redundant. Worth documenting the migration.
-4. **Build 64-bit from day 1 or stay 32-bit?** — 32-bit is what MCO uses today. 64-bit unlocks more RAM but doubles the ABI work. I'd say 32-bit through Phase 6, 64-bit in Phase 7.
+- **MCODeadlockFix.dll maintenance** — superseded by DX11 backend in Phase 6
 
 ## Success metrics
 
@@ -223,8 +227,9 @@ All of these are MIT-licensed contributions americusmaximus has explicitly invit
 - ✅ Resolution/windowed/Vsync configurable from `azmco.ini` (no registry hacks)
 - ✅ No more Alt+Enter deadlock
 - ✅ No reset-loop hang on focus loss
+- ✅ MCODeadlockFix.dll removable
 - ✅ Linux native port compiles and runs
-- ✅ ~10 PRs upstreamed to americusmaximus/AZMCO
+- ✅ ~4 PRs upstreamed to americusmaximus/AZMCO
 
 ## Sources of risk
 
@@ -235,10 +240,10 @@ All of these are MIT-licensed contributions americusmaximus has explicitly invit
 
 ## First 5 actions to start today
 
-1. Wait for orphan msiexec to clear, retry MSVC install
-2. Apply the 3 tweaks (reset loop, windowed mode, resolution override)
-3. Rebuild with MinGW, drop into MCO, launch, observe
-4. Read `Source/AZX/RendererModule.Basic.hxx` end-to-end
-5. Produce `docs/RENDERER_INTERFACE.md` (Phase 1 deliverable)
+1. Wait for orphan msiexec to clear, retry MSVC install (with **64-bit** Build Tools)
+2. Apply **only the reset-loop fix** in DX8 source (skip windowed + resolution — those belong in DX11)
+3. Rebuild with MinGW AND MSVC, drop into MCO, launch, observe
+4. Install 64-bit Vulkan SDK + DirectXTex for downstream phases
+5. Read `Source/AZX/RendererModule.Basic.hxx` end-to-end
 
 Each takes < 1 hour. Doing them today gets Phase 0 + start of Phase 1 done.
