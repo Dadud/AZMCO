@@ -39,6 +39,29 @@ extern "C" const GUID IID_ID3D11Texture2D = {
     0x6f15aaf2, 0xd208, 0x4e89, { 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c }
 };  // snprintf
 
+#include <cstdio>
+#include <cstdarg>
+#include <ctime>
+
+// Phase 5 step 2: Trace every THRASH call to a log file so we can see what
+// mcity is actually doing. File-based (not OutputDebugString) so we can read
+// the trace even if mcity crashes. Writes are flushed per call.
+static const char* TRACE_PATH = "C:\\Users\\Dadud\\tools\\mco-dx11-trace.log";
+static void trace_log(const char* fmt, ...) {
+    FILE* f = fopen(TRACE_PATH, "a");
+    if (!f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fputc('\n', f);
+    fclose(f);
+}
+static void trace_clear() {
+    FILE* f = fopen(TRACE_PATH, "w");
+    if (f) { fputs("=== Phase 5 DX11 trace start ===\n", f); fclose(f); }
+}
+
 #define RENDERER_MODULE_NAME "DX11 3rash"
 #ifdef _WIN64
 #define RENDERER_MODULE_TITLE_NAME "DirectX 11 (x64)"
@@ -174,6 +197,7 @@ const RendererModuleDescriptor* AcquireDescriptor()
         firstCall = 0;
         memset(&descriptor, 0, sizeof(descriptor));
         descriptor.Signature = RENDERER_MODULE_SIGNATURE_D3D8;
+        trace_log("AcquireDescriptor() called (first time, desc=%zu bytes)", sizeof(descriptor));
         descriptor.Size = sizeof(descriptor);
         descriptor.Version = RENDERER_MODULE_VERSION_115;
         // Match the original EA dx8z.dll's descriptor so mcity's
@@ -217,6 +241,7 @@ extern "C" {
 // return value; the upstream returns RENDERER_MODULE_FAILURE on failure).
 u32 WINAPI CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options)
 {
+    trace_log("CreateGameWindow(w=%u, h=%u, fmt=%u, opts=%u)", width, height, format, options);
     // Find a free slot.
     u32 slot = MAX_WINDOWS;
     for (u32 i = 0; i < MAX_WINDOWS; i++) {
@@ -225,8 +250,10 @@ u32 WINAPI CreateGameWindow(const u32 width, const u32 height, const u32 format,
     if (slot >= MAX_WINDOWS) {
         // Out of slots. Upstream would return RENDERER_MODULE_FAILURE.
         // Returning 0 lets mcity distinguish from valid indices (1..MAX_WINDOWS).
+        trace_log("  no free slot, returning 0");
         return 0;
     }
+    trace_log("  using slot %u", slot);
 
     DX11WindowSlot* s = &g_Windows[slot];
     s->Width = width;
@@ -284,11 +311,13 @@ u32 WINAPI CreateGameWindow(const u32 width, const u32 height, const u32 format,
     SyncInterfaceFromActive();
 
     // Return 1-based index to match upstream's MIN_WINDOW_INDEX scheme.
+    trace_log("  returning %u", slot + 1);
     return slot + 1;
 }
 
 BOOL WINAPI DestroyGameWindow(const u32 indx)
 {
+    trace_log("DestroyGameWindow(indx=%u)", indx);
     // indx is 1-based (returned from CreateGameWindow as slot+1).
     if (indx == 0 || indx > MAX_WINDOWS) return FALSE;
     DX11WindowSlot* s = &g_Windows[indx - 1];
@@ -315,6 +344,13 @@ BOOL WINAPI DestroyGameWindow(const u32 indx)
 BOOL WINAPI ClearGameWindow(void)
 {
     DX11WindowSlot* s = ActiveSlot();
+    static u32 clear_count = 0;
+    if (++clear_count <= 5 || (clear_count & 0xFF) == 0) {
+        trace_log("ClearGameWindow #%u slot=%p ctx=%p rtv=%p",
+                  clear_count, (void*)s,
+                  s ? (void*)s->Context : nullptr,
+                  s ? (void*)s->RenderTargetView : nullptr);
+    }
     if (!s || !s->Context || !s->RenderTargetView) return FALSE;
 
     const float clearColor[4] = { 0.05f, 0.10f, 0.20f, 1.0f };  // dark blue
@@ -339,6 +375,7 @@ BOOL WINAPI RestoreRendererSurfaces(void) { return TRUE; }
 // (HWND came after CreateGameWindow), we lazily create the device.
 BOOL WINAPI SelectState(u32 state, void* value)
 {
+    trace_log("SelectState(state=%u, value=%p)", state, value);
     if (state == RENDERER_MODULE_STATE_SELECT_WINDOW && value != nullptr) {
         // Store HWND in the active slot. If no slot is active yet, store in
         // slot 0 so a future CreateGameWindow call can pick it up.
@@ -414,7 +451,11 @@ BOOL WINAPI DrawLine(u32 a, u32 b) { return TRUE; }
 BOOL WINAPI DrawLineMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
 BOOL WINAPI DrawLineStrip(const u32 count, void* vertexes) { return TRUE; }
 BOOL WINAPI DrawPoints(u32 count, const u16* indexes) { return TRUE; }
-BOOL WINAPI DrawRectangle(s32 x0, s32 y0, s32 x1, s32 y1, u32 color) { return TRUE; }
+BOOL WINAPI DrawRectangle(s32 x0, s32 y0, s32 x1, s32 y1, u32 color) {
+    static u32 count = 0;
+    if (++count <= 3) trace_log("DrawRectangle(%d,%d,%d,%d, 0x%08x) #%u", x0, y0, x1, y1, color, count);
+    return TRUE;
+}
 BOOL WINAPI DrawRectangles(const s32* rects, u32 count, u32 color) { return TRUE; }
 BOOL WINAPI DrawTriangle(void* a, void* b, void* c) { return TRUE; }
 BOOL WINAPI DrawTriangleFan(const u32 count, void* vertexes) { return TRUE; }
@@ -431,6 +472,8 @@ BOOL WINAPI Idle(void) { return TRUE; }
 // count on subsequent calls (mcity may call Init multiple times).
 BOOL WINAPI Init(void)
 {
+    trace_clear();
+    trace_log("Init() called");
     g_DX11.IsInitialized = 1;
     // Count currently allocated windows (slot-based).
     u32 count = 0;
@@ -449,16 +492,21 @@ BOOL WINAPI Init(void)
 // is ready. We mirror that value here even though our device is DX11 —
 // the value is just a sentinel meaning "yes, hardware accel is available".
 #define RENDERER_MODULE_DX8_ACCELERATION_AVAILABLE 100
-BOOL WINAPI Is(void) { return (BOOL)RENDERER_MODULE_DX8_ACCELERATION_AVAILABLE; }
+BOOL WINAPI Is(void) {
+    static u32 count = 0;
+    if (++count <= 3) trace_log("Is() -> 100 (call #%u)", count);
+    return (BOOL)RENDERER_MODULE_DX8_ACCELERATION_AVAILABLE;
+}
 BOOL WINAPI LockGameWindow(void) { return TRUE; }
 BOOL WINAPI ToggleGameWindow(BOOL state) { return TRUE; }
 BOOL WINAPI RestoreGameWindow(void) { return TRUE; }
-BOOL WINAPI SelectDevice(u32 index) { return TRUE; }
+BOOL WINAPI SelectDevice(u32 index) { trace_log("SelectDevice(%u)", index); return TRUE; }
 // Phase 5: indx is 1-based window index (returned from CreateGameWindow).
 // Switches the active slot so subsequent draws target the new window's
 // device + swap chain.
 BOOL WINAPI SelectGameWindow(u32 indx)
 {
+    trace_log("SelectGameWindow(indx=%u)", indx);
     if (indx == 0 || indx > MAX_WINDOWS) return FALSE;
     u32 slot = indx - 1;
     if (!g_Windows[slot].IsAllocated) return FALSE;
@@ -472,6 +520,13 @@ BOOL WINAPI SelectVideoMode(const u32 mode, const u32 pending, const u32 depth) 
 BOOL WINAPI SyncGameWindow(const u32 type)
 {
     DX11WindowSlot* s = ActiveSlot();
+    static u32 sync_count = 0;
+    if (++sync_count <= 3) {
+        trace_log("SyncGameWindow(type=%u) slot=%p swap=%p dev=%p",
+                  type, (void*)s,
+                  s ? (void*)s->SwapChain : nullptr,
+                  s ? (void*)s->Device : nullptr);
+    }
     if (!s || !s->SwapChain || !s->Device) return FALSE;
     // type=0 -> standard Present, type=1 -> vsync, type=2 -> no-wait
     u32 sync_interval = 1;  // vsync
@@ -497,7 +552,11 @@ BOOL WINAPI DrawPointMesh(const u32 count, void* vertexes, const u32* indexes) {
 BOOL WINAPI DrawPointStrip(const u32 count, void* vertexes) { return TRUE; }
 BOOL WINAPI DrawQuad(void* a, void* b, void* c, void* d) { return TRUE; }
 BOOL WINAPI DrawQuadMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL WINAPI DrawSprite(void* a, void* b) { return TRUE; }
+BOOL WINAPI DrawSprite(void* a, void* b) {
+    static u32 count = 0;
+    if (++count <= 3) trace_log("DrawSprite(a=%p, b=%p) #%u", a, b, count);
+    return TRUE;
+}
 BOOL WINAPI DrawSpriteMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
 BOOL WINAPI DrawTriangleFans(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
 BOOL WINAPI DrawTriangleStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
