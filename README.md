@@ -1,9 +1,17 @@
 # AZMCO Development Workspace
+# AZMCO Development Workspace
 
 This is the **dev workspace** for `americusmaximus/AZMCO` — a clean fork-local checkout used to add modern render-engine backends (DX11 / Vulkan / OpenGL), 64-bit support, modern input, and Linux/Mac ports.
 
-## Layout
+**Current direction (2026-07-05):** building a D3D8→DX11 shim DLL
+(`dxwrapper`-based, deployed as `d3d8.dll` next to `mcity.exe`) so
+Motor City Online runs on modern Windows / NVIDIA hardware with
+hardware acceleration. The previous 3RASH `dx8z.dll` approach
+proved architecturally infeasible — see
+[`docs/PIVOT_DXWRAPPER_2026-07-05.md`](docs/PIVOT_DXWRAPPER_2026-07-05.md)
+and [`docs/PHASE5_RESULTS_2026-07-05.md`](docs/PHASE5_RESULTS_2026-07-05.md).
 
+## Layout
 ```
 ~/projects/azmco-dev/
 ├── upstream/        ← bare clone of americusmaximus/AZMCO, branch dev/modernization
@@ -20,10 +28,11 @@ This is the **dev workspace** for `americusmaximus/AZMCO` — a clean fork-local
 │   ├── server/mco_shard/  ← Local shard server (Python)
 │   ├── client/preservation_client/  ← Custom client
 │   └── persistence/       ← sqlite shard DB
+├── dxwrapper/       ← vendored dxwrapper source (D3D8→DX11 shim) — see docs/PIVOT
 ├── build/           ← out-of-tree build outputs (gitignored)
-├── patches/         ← binary patches (e.g. dx8z reset-loop patch)
 ├── scripts/         ← build / test / install helpers
-└── NOTES.md         ← session-local development notes (NOT committed)
+├── tools/           ← ad-hoc helper bat/ps1 scripts (not gitignored, kept locally)
+└── docs/            ← session plans, results, pivot notes
 ```
 
 ## Repos

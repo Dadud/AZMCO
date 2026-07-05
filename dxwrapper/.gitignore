@@ -1,0 +1,12 @@
+# dxwrapper build outputs
+build/
+*.dll
+*.exe
+*.pdb
+*.obj
+*.lib
+*.exp
+*.o
+*.a
+# Config overrides
+mcity.ini
