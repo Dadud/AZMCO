@@ -441,7 +441,15 @@ BOOL WINAPI Init(void)
     g_DX11.DeviceCount = count;
     return count;
 }
-BOOL WINAPI Is(void) { return 0; }  // 0 = no acceleration
+// Phase 5: Return acceleration-available sentinel value. mcity calls this
+// after Init to check whether the renderer is usable. Returning 0 is treated
+// as "no acceleration" and triggers the "Motor City has detected a problem
+// with the hardware configuration" error dialog. The upstream DX8 returns
+// RENDERER_MODULE_DX8_ACCELERATION_AVAILABLE (100) when a real D3D8 device
+// is ready. We mirror that value here even though our device is DX11 —
+// the value is just a sentinel meaning "yes, hardware accel is available".
+#define RENDERER_MODULE_DX8_ACCELERATION_AVAILABLE 100
+BOOL WINAPI Is(void) { return (BOOL)RENDERER_MODULE_DX8_ACCELERATION_AVAILABLE; }
 BOOL WINAPI LockGameWindow(void) { return TRUE; }
 BOOL WINAPI ToggleGameWindow(BOOL state) { return TRUE; }
 BOOL WINAPI RestoreGameWindow(void) { return TRUE; }
