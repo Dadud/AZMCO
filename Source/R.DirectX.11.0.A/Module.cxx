@@ -162,7 +162,7 @@ extern "C" {
 // Phase 3: Real D3D11 device + swap chain creation.
 // Returns TRUE on success, FALSE on any failure.
 // On failure, all D3D11 resources are released and g_DX11 state is reset.
-BOOL CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options) {
+BOOL WINAPI CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options) {
     // Phase 4: This is the real signature mcity calls (4 u32 args, not HWND).
     // mcity manages windows separately and passes a window index to draw funcs.
     //
@@ -173,7 +173,7 @@ BOOL CreateGameWindow(const u32 width, const u32 height, const u32 format, const
     return 1; // window index 1
 }
 
-BOOL DestroyGameWindow(const u32 indx)
+BOOL WINAPI DestroyGameWindow(const u32 indx)
 {
     (void)indx;
     if (g_DX11.RenderTargetView) { g_DX11.RenderTargetView->Release(); g_DX11.RenderTargetView = nullptr; }
@@ -187,7 +187,7 @@ BOOL DestroyGameWindow(const u32 indx)
 // Phase 3: Clear the render target to a known color.
 // Default clear is dark blue (matches MCO's loading screen background).
 // Color can be overridden via state setters in Phase 6 (DX11 polish).
-BOOL ClearGameWindow(void)
+BOOL WINAPI ClearGameWindow(void)
 {
     if (!g_DX11.IsInitialized || !g_DX11.Context) return FALSE;
 
@@ -195,54 +195,54 @@ BOOL ClearGameWindow(void)
     g_DX11.Context->ClearRenderTargetView(g_DX11.RenderTargetView, clearColor);
     return TRUE;
 }
-BOOL ClipGameWindow(const u32 x0, const u32 y0, const u32 x1, const u32 y1) { return TRUE; }
+BOOL WINAPI ClipGameWindow(const u32 x0, const u32 y0, const u32 x1, const u32 y1) { return TRUE; }
 
-BOOL AcquireRendererDevice(HWND hwnd) { return TRUE; }
-BOOL AcquireRendererSurface(HWND hwnd) { return TRUE; }
-BOOL InitializeVertexBuffer(void* buffer, u32 stride, u32 format, u32 width, u32 height) { return TRUE; }
-BOOL OptimizeVertexBuffer(void* buffer) { return TRUE; }
-BOOL LockWindow(BOOL state) { return TRUE; }
-BOOL RenderPacket(const void* packet) { return TRUE; }
-BOOL RenderBufferedPacket(const void* packet) { return TRUE; }
-BOOL RenderPacketDX8(const void* packet) { return TRUE; }
-BOOL AcquireRendererInstance(const void* instance) { return TRUE; }
-BOOL RestoreRendererSurfaces(void) { return TRUE; }
-BOOL SelectState(u32 state, void* value) { return TRUE; }
-BOOL AcquireState(u32 state, void* value) { return TRUE; }
-BOOL TestCooperativeLevel(void) { return TRUE; }
-BOOL AcquireGuardBands(void* bands) { return TRUE; }
-BOOL AcquireTransformAndLightCapabilities(void* caps) { return TRUE; }
-BOOL AcquireDeviceCapabilities8(void* caps) { return TRUE; }
-BOOL AcquireRendererObjects(void) { return TRUE; }
-BOOL AcquireMainRendererSurface(void) { return TRUE; }
-BOOL AcquireBackRendererSurface(void) { return TRUE; }
-BOOL AcquireRendererObjectsDX8(void) { return TRUE; }
-BOOL AcquireMaxAnisotropyDX8(u32* max) { if (max) *max = 16; return TRUE; }
-BOOL AcquireTransformWorld(void* m) { if (m) memset(m, 0, 0x40); return TRUE; }
-BOOL AcquireTransformView(void* m) { if (m) memset(m, 0, 0x40); return TRUE; }
-BOOL AcquireTransformProjection(void* m) { if (m) memset(m, 0, 0x40); return TRUE; }
-BOOL AcquireLight(u32 index, void* light) { return TRUE; }
-BOOL AcquireCurrentMaterial(void* mat) { return TRUE; }
-BOOL AcquireDisplayState(u32* state) { if (state) *state = 0; return TRUE; }
-BOOL AcquireTransformAndLightCapabilitiesDX8(void* caps) { return TRUE; }
+BOOL WINAPI AcquireRendererDevice(HWND hwnd) { return TRUE; }
+BOOL WINAPI AcquireRendererSurface(HWND hwnd) { return TRUE; }
+BOOL WINAPI InitializeVertexBuffer(void* buffer, u32 stride, u32 format, u32 width, u32 height) { return TRUE; }
+BOOL WINAPI OptimizeVertexBuffer(void* buffer) { return TRUE; }
+BOOL WINAPI LockWindow(BOOL state) { return TRUE; }
+BOOL WINAPI RenderPacket(const void* packet) { return TRUE; }
+BOOL WINAPI RenderBufferedPacket(const void* packet) { return TRUE; }
+BOOL WINAPI RenderPacketDX8(const void* packet) { return TRUE; }
+BOOL WINAPI AcquireRendererInstance(const void* instance) { return TRUE; }
+BOOL WINAPI RestoreRendererSurfaces(void) { return TRUE; }
+BOOL WINAPI SelectState(u32 state, void* value) { return TRUE; }
+BOOL WINAPI AcquireState(u32 state, void* value) { return TRUE; }
+BOOL WINAPI TestCooperativeLevel(void) { return TRUE; }
+BOOL WINAPI AcquireGuardBands(void* bands) { return TRUE; }
+BOOL WINAPI AcquireTransformAndLightCapabilities(void* caps) { return TRUE; }
+BOOL WINAPI AcquireDeviceCapabilities8(void* caps) { return TRUE; }
+BOOL WINAPI AcquireRendererObjects(void) { return TRUE; }
+BOOL WINAPI AcquireMainRendererSurface(void) { return TRUE; }
+BOOL WINAPI AcquireBackRendererSurface(void) { return TRUE; }
+BOOL WINAPI AcquireRendererObjectsDX8(void) { return TRUE; }
+BOOL WINAPI AcquireMaxAnisotropyDX8(u32* max) { if (max) *max = 16; return TRUE; }
+BOOL WINAPI AcquireTransformWorld(void* m) { if (m) memset(m, 0, 0x40); return TRUE; }
+BOOL WINAPI AcquireTransformView(void* m) { if (m) memset(m, 0, 0x40); return TRUE; }
+BOOL WINAPI AcquireTransformProjection(void* m) { if (m) memset(m, 0, 0x40); return TRUE; }
+BOOL WINAPI AcquireLight(u32 index, void* light) { return TRUE; }
+BOOL WINAPI AcquireCurrentMaterial(void* mat) { return TRUE; }
+BOOL WINAPI AcquireDisplayState(u32* state) { if (state) *state = 0; return TRUE; }
+BOOL WINAPI AcquireTransformAndLightCapabilitiesDX8(void* caps) { return TRUE; }
 
-BOOL DrawLine(u32 a, u32 b) { return TRUE; }
-BOOL DrawLineMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawLineStrip(const u32 count, void* vertexes) { return TRUE; }
-BOOL DrawPoints(u32 count, const u16* indexes) { return TRUE; }
-BOOL DrawRectangle(s32 x0, s32 y0, s32 x1, s32 y1, u32 color) { return TRUE; }
-BOOL DrawRectangles(const s32* rects, u32 count, u32 color) { return TRUE; }
-BOOL DrawTriangle(void* a, void* b, void* c) { return TRUE; }
-BOOL DrawTriangleFan(const u32 count, void* vertexes) { return TRUE; }
-BOOL DrawTriangleMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawTriangleStrip(const u32 count, void* vertexes) { return TRUE; }
+BOOL WINAPI DrawLine(u32 a, u32 b) { return TRUE; }
+BOOL WINAPI DrawLineMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawLineStrip(const u32 count, void* vertexes) { return TRUE; }
+BOOL WINAPI DrawPoints(u32 count, const u16* indexes) { return TRUE; }
+BOOL WINAPI DrawRectangle(s32 x0, s32 y0, s32 x1, s32 y1, u32 color) { return TRUE; }
+BOOL WINAPI DrawRectangles(const s32* rects, u32 count, u32 color) { return TRUE; }
+BOOL WINAPI DrawTriangle(void* a, void* b, void* c) { return TRUE; }
+BOOL WINAPI DrawTriangleFan(const u32 count, void* vertexes) { return TRUE; }
+BOOL WINAPI DrawTriangleMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawTriangleStrip(const u32 count, void* vertexes) { return TRUE; }
 
 
 // === ADDITIONAL STUBS (Phase 2 completion) ===
 // These entry points are also exported by the upstream's def file.
-BOOL FlushGameWindow(void) { return TRUE; }
-BOOL Idle(void) { return TRUE; }
-BOOL Init(void)
+BOOL WINAPI FlushGameWindow(void) { return TRUE; }
+BOOL WINAPI Idle(void) { return TRUE; }
+BOOL WINAPI Init(void)
 {
     if (g_DX11.IsInitialized) {
         // Make sure the McityView pointer is in sync with the device.
@@ -258,16 +258,16 @@ BOOL Init(void)
     g_DX11.DeviceCount = 1;
     return 1;  // 1 device available
 }
-BOOL Is(void) { return 0; }  // 0 = no acceleration
-BOOL LockGameWindow(void) { return TRUE; }
-BOOL ToggleGameWindow(BOOL state) { return TRUE; }
-BOOL RestoreGameWindow(void) { return TRUE; }
-BOOL SelectDevice(u32 index) { return TRUE; }
-BOOL SelectGameWindow(void* window) { return TRUE; }
-BOOL SelectTexture(u32 index) { return TRUE; }
-BOOL SelectVideoMode(const u32 mode, const u32 pending, const u32 depth) { return TRUE; }
+BOOL WINAPI Is(void) { return 0; }  // 0 = no acceleration
+BOOL WINAPI LockGameWindow(void) { return TRUE; }
+BOOL WINAPI ToggleGameWindow(BOOL state) { return TRUE; }
+BOOL WINAPI RestoreGameWindow(void) { return TRUE; }
+BOOL WINAPI SelectDevice(u32 index) { return TRUE; }
+BOOL WINAPI SelectGameWindow(void* window) { return TRUE; }
+BOOL WINAPI SelectTexture(u32 index) { return TRUE; }
+BOOL WINAPI SelectVideoMode(const u32 mode, const u32 pending, const u32 depth) { return TRUE; }
 // Phase 3: Present the back buffer (swap chain Present).
-BOOL SyncGameWindow(const u32 type)
+BOOL WINAPI SyncGameWindow(const u32 type)
 {
     if (!g_DX11.SwapChain || !g_DX11.Device) return FALSE;
     // type=0 -> standard Present, type=1 -> vsync, type=2 -> no-wait
@@ -277,25 +277,25 @@ BOOL SyncGameWindow(const u32 type)
     HRESULT hr = g_DX11.SwapChain->Present(sync_interval, flags);
     return SUCCEEDED(hr);
 }
-BOOL UnlockGameWindow(void) { return TRUE; }
-BOOL ReadRectangle(s32 x0, s32 y0, s32 x1, s32 y1, void* data) { return TRUE; }
-BOOL ReadRectangles(const s32* rects, u32 count, void* data) { return TRUE; }
-BOOL WriteRectangle(s32 x0, s32 y0, s32 x1, s32 y1, const void* data) { return TRUE; }
-BOOL WriteRectangles(const s32* rects, u32 count, const void* data) { return TRUE; }
-BOOL AcquireGameWindowTexture(u32 index, void* texture) { return TRUE; }
-BOOL AllocateTexture(u32 index, u32 width, u32 height, u32 format, u32 location, u32 mipmaps) { return TRUE; }
-BOOL ReleaseTexture(u32 index) { return TRUE; }
-BOOL ResetTextures(void) { return TRUE; }
-BOOL UpdateTexture(u32 index, u32 level, u32 x, u32 y, u32 width, u32 height, const void* data) { return TRUE; }
-BOOL UpdateTextureRectangle(u32 index, u32 level, const s32* rects, u32 count, const void* data) { return TRUE; }
-BOOL DrawLineStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawPoint(void* vertex) { return TRUE; }
-BOOL DrawPointMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawPointStrip(const u32 count, void* vertexes) { return TRUE; }
-BOOL DrawQuad(void* a, void* b, void* c, void* d) { return TRUE; }
-BOOL DrawQuadMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawSprite(void* a, void* b) { return TRUE; }
-BOOL DrawSpriteMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawTriangleFans(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
-BOOL DrawTriangleStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI UnlockGameWindow(void) { return TRUE; }
+BOOL WINAPI ReadRectangle(s32 x0, s32 y0, s32 x1, s32 y1, void* data) { return TRUE; }
+BOOL WINAPI ReadRectangles(const s32* rects, u32 count, void* data) { return TRUE; }
+BOOL WINAPI WriteRectangle(s32 x0, s32 y0, s32 x1, s32 y1, const void* data) { return TRUE; }
+BOOL WINAPI WriteRectangles(const s32* rects, u32 count, const void* data) { return TRUE; }
+BOOL WINAPI AcquireGameWindowTexture(u32 index, void* texture) { return TRUE; }
+BOOL WINAPI AllocateTexture(u32 index, u32 width, u32 height, u32 format, u32 location, u32 mipmaps) { return TRUE; }
+BOOL WINAPI ReleaseTexture(u32 index) { return TRUE; }
+BOOL WINAPI ResetTextures(void) { return TRUE; }
+BOOL WINAPI UpdateTexture(u32 index, u32 level, u32 x, u32 y, u32 width, u32 height, const void* data) { return TRUE; }
+BOOL WINAPI UpdateTextureRectangle(u32 index, u32 level, const s32* rects, u32 count, const void* data) { return TRUE; }
+BOOL WINAPI DrawLineStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawPoint(void* vertex) { return TRUE; }
+BOOL WINAPI DrawPointMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawPointStrip(const u32 count, void* vertexes) { return TRUE; }
+BOOL WINAPI DrawQuad(void* a, void* b, void* c, void* d) { return TRUE; }
+BOOL WINAPI DrawQuadMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawSprite(void* a, void* b) { return TRUE; }
+BOOL WINAPI DrawSpriteMesh(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawTriangleFans(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
+BOOL WINAPI DrawTriangleStrips(const u32 count, void* vertexes, const u32* indexes) { return TRUE; }
 } // extern "C"
