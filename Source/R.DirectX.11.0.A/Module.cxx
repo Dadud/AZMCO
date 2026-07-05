@@ -81,16 +81,55 @@ typedef void* LPVOID;
 // AddRef/Release on our device, which is fine.
 //
 // We keep RenderTargetView in the struct for our own use (offset 0x10+).
+//
+// Phase 5: One global interface struct + per-window slots. mcity can ask for
+// up to MAX_WINDOWS windows via CreateGameWindow and switch between them via
+// SelectGameWindow. Each slot holds its own DX11 device + swap chain + RTV.
+#define MAX_WINDOWS 4
+static struct DX11WindowSlot {
+    ID3D11Device* Device;
+    ID3D11DeviceContext* Context;
+    IDXGISwapChain* SwapChain;
+    ID3D11RenderTargetView* RenderTargetView;
+    void* HWND;                    // captured via SelectState(SELECT_WINDOW=25, hwnd)
+    u32 Width;
+    u32 Height;
+    u32 Format;
+    u32 Options;
+    u32 IsAllocated;               // CreateGameWindow returned this index
+} g_Windows[MAX_WINDOWS] = {};
+
 static struct DX11State {
-    ID3D11Device* Device;             // 0x00 - primary D3D11 device
+    ID3D11Device* Device;             // 0x00 - primary D3D11 device (alias for active slot)
     ID3D11DeviceContext* Context;     // 0x04 - immediate context
-    IDXGISwapChain* SwapChain;        // 0x08 - swap chain (created in CreateGameWindow)
+    IDXGISwapChain* SwapChain;        // 0x08 - swap chain (alias for active slot)
     ID3D11Device* McityView;          // 0x0C - mcity reads this as vtable ptr (alias for Device)
-    ID3D11RenderTargetView* RenderTargetView;  // 0x10 - the back buffer RTV
+    ID3D11RenderTargetView* RenderTargetView;  // 0x10 - the back buffer RTV (alias)
     BOOL IsInitialized;               // 0x14 - init complete flag
     u32 DeviceCount;                  // 0x18 - mirrors upstream Devices.Count
     void* Window;                     // 0x1C - the active window handle (HWND)
-} g_DX11 = { nullptr, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr };
+    u32 ActiveSlot;                   // index into g_Windows, set by SelectGameWindow
+} g_DX11 = { nullptr, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0 };
+
+// Returns the active window slot, or nullptr if no slot is active.
+static DX11WindowSlot* ActiveSlot() {
+    if (g_DX11.ActiveSlot >= MAX_WINDOWS) return nullptr;
+    if (!g_Windows[g_DX11.ActiveSlot].IsAllocated) return nullptr;
+    return &g_Windows[g_DX11.ActiveSlot];
+}
+
+// Syncs the global g_DX11 interface struct's pointer aliases to point at the
+// currently active slot's resources. mcity reads offsets 0x00/0x04/0x08/0x10
+// as vtable/etc. pointers so the aliases must match the active slot.
+static void SyncInterfaceFromActive() {
+    DX11WindowSlot* s = ActiveSlot();
+    g_DX11.Device = s ? s->Device : nullptr;
+    g_DX11.Context = s ? s->Context : nullptr;
+    g_DX11.SwapChain = s ? s->SwapChain : nullptr;
+    g_DX11.RenderTargetView = s ? s->RenderTargetView : nullptr;
+    g_DX11.Window = s ? s->HWND : nullptr;
+    g_DX11.McityView = g_DX11.Device;  // alias
+}
 
 // RendererModuleDescriptor (normally from RendererModule.Basic.hxx).
 // Phase 2 skeleton defines only what we need for AcquireDescriptor.
@@ -157,42 +196,129 @@ const RendererModuleDescriptor* AcquireDescriptor()
 // Every entry point is a stub for Phase 2 skeleton.
 // Phase 3-4 will replace with real DX11 logic.
 
+// Phase 5: state constants. We don't pull in AZX/RendererModule.Basic.hxx
+// (it's D3D8-specific) so we hardcode the state IDs we care about.
+#define RENDERER_MODULE_STATE_SELECT_WINDOW 25
+
 extern "C" {
 
-// Phase 3: Real D3D11 device + swap chain creation.
-// Returns TRUE on success, FALSE on any failure.
-// On failure, all D3D11 resources are released and g_DX11 state is reset.
-BOOL WINAPI CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options) {
-    // Phase 4: This is the real signature mcity calls (4 u32 args, not HWND).
-    // mcity manages windows separately and passes a window index to draw funcs.
-    //
-    // We don't have an HWND here so we can't create the swap chain yet.
-    // The swap chain will be created in AcquireRendererInstance when we get
-    // the HWND. For now, just return a window index.
-    g_DX11.DeviceCount = 1;
-    return 1; // window index 1
+// Phase 5: Allocate a new DX11 device + swap chain for a game window.
+//
+// mcity calls this with (width, height, format, options) and expects back
+// a window index (u32, 0-based in upstream). We find the next free slot
+// in g_Windows, create a D3D11 device + swap chain bound to the HWND that
+// was captured via SelectState(SELECT_WINDOW=25, hwnd), and return the slot
+// index. If we don't have an HWND yet, we still return a slot index but
+// flag it as needing HWND (the slot's HWND field stays nullptr until
+// SelectState fires).
+//
+// Returns: window index on success, 0 on failure (0 is reserved/unused in
+// the upstream's MIN_WINDOW_INDEX scheme but we'll use 0 as our "no slots"
+// return value; the upstream returns RENDERER_MODULE_FAILURE on failure).
+u32 WINAPI CreateGameWindow(const u32 width, const u32 height, const u32 format, const u32 options)
+{
+    // Find a free slot.
+    u32 slot = MAX_WINDOWS;
+    for (u32 i = 0; i < MAX_WINDOWS; i++) {
+        if (!g_Windows[i].IsAllocated) { slot = i; break; }
+    }
+    if (slot >= MAX_WINDOWS) {
+        // Out of slots. Upstream would return RENDERER_MODULE_FAILURE.
+        // Returning 0 lets mcity distinguish from valid indices (1..MAX_WINDOWS).
+        return 0;
+    }
+
+    DX11WindowSlot* s = &g_Windows[slot];
+    s->Width = width;
+    s->Height = height;
+    s->Format = format;
+    s->Options = options;
+    s->IsAllocated = 1;
+    g_DX11.DeviceCount++;
+
+    // If we already have an HWND (from an earlier SelectState call), create
+    // the device + swap chain now. Otherwise we mark the slot as pending and
+    // create the device when SelectState fires.
+    if (s->HWND != nullptr) {
+        DXGI_SWAP_CHAIN_DESC scd = {};
+        scd.BufferCount = 1;
+        scd.BufferDesc.Width = width ? width : 800;
+        scd.BufferDesc.Height = height ? height : 600;
+        scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        scd.BufferDesc.RefreshRate.Numerator = 60;
+        scd.BufferDesc.RefreshRate.Denominator = 1;
+        scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        scd.OutputWindow = (HWND)s->HWND;
+        scd.SampleDesc.Count = 1;
+        scd.SampleDesc.Quality = 0;
+        scd.Windowed = TRUE;
+        scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+        D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+        HRESULT hr = D3D11CreateDeviceAndSwapChain(
+            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+            &featureLevel, 1, D3D11_SDK_VERSION,
+            &scd, &s->SwapChain, &s->Device, nullptr, &s->Context);
+        if (SUCCEEDED(hr)) {
+            ID3D11Texture2D* backBuffer = nullptr;
+            hr = s->SwapChain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&backBuffer);
+            if (SUCCEEDED(hr)) {
+                s->Device->CreateRenderTargetView(backBuffer, nullptr, &s->RenderTargetView);
+                backBuffer->Release();
+                s->Context->OMSetRenderTargets(1, &s->RenderTargetView, nullptr);
+
+                D3D11_VIEWPORT vp = {};
+                vp.Width = (float)(width ? width : 800);
+                vp.Height = (float)(height ? height : 600);
+                vp.MinDepth = 0.0f;
+                vp.MaxDepth = 1.0f;
+                s->Context->RSSetViewports(1, &vp);
+            }
+        }
+        // If creation failed, the slot still has its IsAllocated=1 but
+        // no device. Subsequent operations will no-op until HWND changes.
+    }
+
+    // Make this the active slot by default so subsequent draws work.
+    g_DX11.ActiveSlot = slot;
+    SyncInterfaceFromActive();
+
+    // Return 1-based index to match upstream's MIN_WINDOW_INDEX scheme.
+    return slot + 1;
 }
 
 BOOL WINAPI DestroyGameWindow(const u32 indx)
 {
-    (void)indx;
-    if (g_DX11.RenderTargetView) { g_DX11.RenderTargetView->Release(); g_DX11.RenderTargetView = nullptr; }
-    if (g_DX11.SwapChain) { g_DX11.SwapChain->Release(); g_DX11.SwapChain = nullptr; }
-    if (g_DX11.Context) { g_DX11.Context->Release(); g_DX11.Context = nullptr; }
-    if (g_DX11.Device) { g_DX11.Device->Release(); g_DX11.Device = nullptr; }
-    g_DX11.IsInitialized = 0;
+    // indx is 1-based (returned from CreateGameWindow as slot+1).
+    if (indx == 0 || indx > MAX_WINDOWS) return FALSE;
+    DX11WindowSlot* s = &g_Windows[indx - 1];
+    if (!s->IsAllocated) return FALSE;
+
+    if (s->RenderTargetView) { s->RenderTargetView->Release(); s->RenderTargetView = nullptr; }
+    if (s->SwapChain) { s->SwapChain->Release(); s->SwapChain = nullptr; }
+    if (s->Context) { s->Context->Release(); s->Context = nullptr; }
+    if (s->Device) { s->Device->Release(); s->Device = nullptr; }
+    s->HWND = nullptr;
+    s->IsAllocated = 0;
+    if (g_DX11.DeviceCount > 0) g_DX11.DeviceCount--;
+
+    // If we just destroyed the active slot, clear the active pointer.
+    if (g_DX11.ActiveSlot == indx - 1) {
+        g_DX11.ActiveSlot = MAX_WINDOWS;  // invalid
+        SyncInterfaceFromActive();
+    }
     return TRUE;
 }
 
-// Phase 3: Clear the render target to a known color.
-// Default clear is dark blue (matches MCO's loading screen background).
-// Color can be overridden via state setters in Phase 6 (DX11 polish).
+// Phase 5: Clear the render target to a known color.
+// Uses the active window slot's RTV. If no slot is active, no-op.
 BOOL WINAPI ClearGameWindow(void)
 {
-    if (!g_DX11.IsInitialized || !g_DX11.Context) return FALSE;
+    DX11WindowSlot* s = ActiveSlot();
+    if (!s || !s->Context || !s->RenderTargetView) return FALSE;
 
     const float clearColor[4] = { 0.05f, 0.10f, 0.20f, 1.0f };  // dark blue
-    g_DX11.Context->ClearRenderTargetView(g_DX11.RenderTargetView, clearColor);
+    s->Context->ClearRenderTargetView(s->RenderTargetView, clearColor);
     return TRUE;
 }
 BOOL WINAPI ClipGameWindow(const u32 x0, const u32 y0, const u32 x1, const u32 y1) { return TRUE; }
@@ -207,7 +333,65 @@ BOOL WINAPI RenderBufferedPacket(const void* packet) { return TRUE; }
 BOOL WINAPI RenderPacketDX8(const void* packet) { return TRUE; }
 BOOL WINAPI AcquireRendererInstance(const void* instance) { return TRUE; }
 BOOL WINAPI RestoreRendererSurfaces(void) { return TRUE; }
-BOOL WINAPI SelectState(u32 state, void* value) { return TRUE; }
+// Phase 5: SelectState intercepts the HWND when mcity calls with
+// state == SELECT_WINDOW (=25). All other state calls are no-ops for now.
+// On HWND change, if a slot is already allocated but missing a device
+// (HWND came after CreateGameWindow), we lazily create the device.
+BOOL WINAPI SelectState(u32 state, void* value)
+{
+    if (state == RENDERER_MODULE_STATE_SELECT_WINDOW && value != nullptr) {
+        // Store HWND in the active slot. If no slot is active yet, store in
+        // slot 0 so a future CreateGameWindow call can pick it up.
+        DX11WindowSlot* s = ActiveSlot();
+        if (!s) s = &g_Windows[0];
+        s->HWND = value;
+        g_DX11.Window = value;
+
+        // If the slot is allocated but has no device yet, create one now.
+        if (s->IsAllocated && s->Device == nullptr) {
+            DXGI_SWAP_CHAIN_DESC scd = {};
+            scd.BufferCount = 1;
+            scd.BufferDesc.Width = s->Width ? s->Width : 800;
+            scd.BufferDesc.Height = s->Height ? s->Height : 600;
+            scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            scd.BufferDesc.RefreshRate.Numerator = 60;
+            scd.BufferDesc.RefreshRate.Denominator = 1;
+            scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+            scd.OutputWindow = (HWND)s->HWND;
+            scd.SampleDesc.Count = 1;
+            scd.SampleDesc.Quality = 0;
+            scd.Windowed = TRUE;
+            scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+            D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+            HRESULT hr = D3D11CreateDeviceAndSwapChain(
+                nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+                &featureLevel, 1, D3D11_SDK_VERSION,
+                &scd, &s->SwapChain, &s->Device, nullptr, &s->Context);
+            if (SUCCEEDED(hr)) {
+                ID3D11Texture2D* backBuffer = nullptr;
+                hr = s->SwapChain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&backBuffer);
+                if (SUCCEEDED(hr)) {
+                    s->Device->CreateRenderTargetView(backBuffer, nullptr, &s->RenderTargetView);
+                    backBuffer->Release();
+                    s->Context->OMSetRenderTargets(1, &s->RenderTargetView, nullptr);
+
+                    D3D11_VIEWPORT vp = {};
+                    vp.Width = (float)(s->Width ? s->Width : 800);
+                    vp.Height = (float)(s->Height ? s->Height : 600);
+                    vp.MinDepth = 0.0f;
+                    vp.MaxDepth = 1.0f;
+                    s->Context->RSSetViewports(1, &vp);
+                }
+            }
+        }
+        SyncInterfaceFromActive();
+        return TRUE;
+    }
+    // Unknown state — accept silently. Returning TRUE keeps mcity happy
+    // even though we don't act on the state.
+    return TRUE;
+}
 BOOL WINAPI AcquireState(u32 state, void* value) { return TRUE; }
 BOOL WINAPI TestCooperativeLevel(void) { return TRUE; }
 BOOL WINAPI AcquireGuardBands(void* bands) { return TRUE; }
@@ -242,39 +426,50 @@ BOOL WINAPI DrawTriangleStrip(const u32 count, void* vertexes) { return TRUE; }
 // These entry points are also exported by the upstream's def file.
 BOOL WINAPI FlushGameWindow(void) { return TRUE; }
 BOOL WINAPI Idle(void) { return TRUE; }
+// Phase 5: Init marks the module as loaded. Real D3D11 work happens in
+// CreateGameWindow + SelectState(SELECT_WINDOW, hwnd). Returns the device
+// count on subsequent calls (mcity may call Init multiple times).
 BOOL WINAPI Init(void)
 {
-    if (g_DX11.IsInitialized) {
-        // Make sure the McityView pointer is in sync with the device.
-        // This is what mcity reads at offset 0xC of our state struct.
-        if (!g_DX11.McityView) { g_DX11.McityView = g_DX11.Device; }
-        return g_DX11.DeviceCount ? g_DX11.DeviceCount : 1;
-    }
-
-    // Mark as initialized. Real DX11 device creation happens in CreateGameWindow
-    // when we have an HWND. This mirrors the upstream DX8's Init behavior of
-    // returning the device count (which is 1 for a single-display system).
     g_DX11.IsInitialized = 1;
-    g_DX11.DeviceCount = 1;
-    return 1;  // 1 device available
+    // Count currently allocated windows (slot-based).
+    u32 count = 0;
+    for (u32 i = 0; i < MAX_WINDOWS; i++) {
+        if (g_Windows[i].IsAllocated) count++;
+    }
+    if (count == 0) count = 1;  // claim at least 1 device exists
+    g_DX11.DeviceCount = count;
+    return count;
 }
 BOOL WINAPI Is(void) { return 0; }  // 0 = no acceleration
 BOOL WINAPI LockGameWindow(void) { return TRUE; }
 BOOL WINAPI ToggleGameWindow(BOOL state) { return TRUE; }
 BOOL WINAPI RestoreGameWindow(void) { return TRUE; }
 BOOL WINAPI SelectDevice(u32 index) { return TRUE; }
-BOOL WINAPI SelectGameWindow(void* window) { return TRUE; }
+// Phase 5: indx is 1-based window index (returned from CreateGameWindow).
+// Switches the active slot so subsequent draws target the new window's
+// device + swap chain.
+BOOL WINAPI SelectGameWindow(u32 indx)
+{
+    if (indx == 0 || indx > MAX_WINDOWS) return FALSE;
+    u32 slot = indx - 1;
+    if (!g_Windows[slot].IsAllocated) return FALSE;
+    g_DX11.ActiveSlot = slot;
+    SyncInterfaceFromActive();
+    return TRUE;
+}
 BOOL WINAPI SelectTexture(u32 index) { return TRUE; }
 BOOL WINAPI SelectVideoMode(const u32 mode, const u32 pending, const u32 depth) { return TRUE; }
-// Phase 3: Present the back buffer (swap chain Present).
+// Phase 5: Present the back buffer (swap chain Present) for the active slot.
 BOOL WINAPI SyncGameWindow(const u32 type)
 {
-    if (!g_DX11.SwapChain || !g_DX11.Device) return FALSE;
+    DX11WindowSlot* s = ActiveSlot();
+    if (!s || !s->SwapChain || !s->Device) return FALSE;
     // type=0 -> standard Present, type=1 -> vsync, type=2 -> no-wait
     u32 sync_interval = 1;  // vsync
     u32 flags = 0;
     if (type == 2) { sync_interval = 0; flags = DXGI_PRESENT_DO_NOT_SEQUENCE; }
-    HRESULT hr = g_DX11.SwapChain->Present(sync_interval, flags);
+    HRESULT hr = s->SwapChain->Present(sync_interval, flags);
     return SUCCEEDED(hr);
 }
 BOOL WINAPI UnlockGameWindow(void) { return TRUE; }
