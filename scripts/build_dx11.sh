@@ -158,7 +158,10 @@ DEF_FIXED_WIN="$(to_win "$DEF_FIXED")"
     "${OBJECTS_WIN[@]}" \
     "$DEF_FIXED_WIN" \
     "$IMPORT_LIB_WIN" \
-    -ld3d11 -ldxgi -ld3dcompiler -lkernel32 2>&1 | head -30
+    -static-libgcc -static-libstdc++ \
+    -Wl,-Bstatic -lstdc++ -lsupc++ -lgcc -lmingw32 -lgcc_eh \
+    -Wl,-Bdynamic \
+    -ld3d11 -ldxgi -ld3dcompiler -lkernel32 -luser32 2>&1 | head -30
 
 RC=$?
 echo
