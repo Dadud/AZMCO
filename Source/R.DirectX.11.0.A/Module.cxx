@@ -503,13 +503,24 @@ BOOL WINAPI RestoreGameWindow(void) { return TRUE; }
 BOOL WINAPI SelectDevice(u32 index) { trace_log("SelectDevice(%u)", index); return TRUE; }
 // Phase 5: indx is 1-based window index (returned from CreateGameWindow).
 // Switches the active slot so subsequent draws target the new window's
-// device + swap chain.
+// device + swap chain. If the requested slot isn't allocated, lazily
+// allocate it with no HWND (will be picked up on a later SelectState(25, ...)
+// or set as pending). This handles the case where mcity asks for a window
+// before calling CreateGameWindow (which our trace shows is the actual flow).
 BOOL WINAPI SelectGameWindow(u32 indx)
 {
     trace_log("SelectGameWindow(indx=%u)", indx);
     if (indx == 0 || indx > MAX_WINDOWS) return FALSE;
     u32 slot = indx - 1;
-    if (!g_Windows[slot].IsAllocated) return FALSE;
+    if (!g_Windows[slot].IsAllocated) {
+        // Lazily allocate the slot with no HWND. Width/height defaults will
+        // be set when SelectState(25, hwnd) fires and we create the device.
+        trace_log("  slot %u not allocated, lazily creating", slot);
+        g_Windows[slot].IsAllocated = 1;
+        g_Windows[slot].Width = 800;
+        g_Windows[slot].Height = 600;
+        g_DX11.DeviceCount++;
+    }
     g_DX11.ActiveSlot = slot;
     SyncInterfaceFromActive();
     return TRUE;
